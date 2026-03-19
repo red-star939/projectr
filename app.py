@@ -81,35 +81,39 @@ if menu == "NEWS AGENT":
                 status.update(label="No Intel Found.", state="error")
                 st.warning("검색 결과가 없습니다. 키워드를 확인하십시오.")
 
-# [Step 5] ARCHIVE STATUS: 선택적 삭제 기능 추가
+# [Step 5] ARCHIVE STATUS: 정밀 카운팅 및 선택적 삭제 기능
 elif menu == "ARCHIVE STATUS":
     st.header("📂 Local DB")
     report_path = os.path.join(current_dir, 'data', 'News_Reports')
     
     if os.path.exists(report_path):
         st.subheader("Local Database Status")
-        st.write(f"보관소 경로: `{report_path}`")
         
+        # 키워드 폴더만 정확히 추출
         keywords = [d for d in os.listdir(report_path) if os.path.isdir(os.path.join(report_path, d))]
         if keywords:
-            # 키워드 선택
             selected_kwd = st.selectbox("상세 확인 데이터 선택", keywords)
             kwd_path = os.path.join(report_path, selected_kwd)
-            sources = os.listdir(kwd_path)
+            
+            # [수정 1] 폴더인 항목만 'Source'로 인식하여 필터링
+            sources = [s for s in os.listdir(kwd_path) if os.path.isdir(os.path.join(kwd_path, s))]
             
             c1, c2, c3 = st.columns([1, 1, 1])
             c1.metric("Sources", len(sources))
-            total_files = sum([len(os.listdir(os.path.join(kwd_path, s))) for s in sources])
-            c2.metric("Stored Files", total_files)
             
-            # [추가] 특정 키워드 데이터 삭제 버튼
+            # [수정 2] .json 파일만 카운트하여 실제 기사 수와 일치시킴
+            total_articles = 0
+            for s in sources:
+                source_subpath = os.path.join(kwd_path, s)
+                # 각 소스 폴더 내의 .json 파일 개수만 합산
+                total_articles += len([f for f in os.listdir(source_subpath) if f.endswith('.json')])
+            
+            c2.metric("Stored Articles", total_articles) # 이름도 직관적으로 변경
+            
             with c3:
-                st.write("") # 간격 조정
+                st.write("") 
                 if st.button(f"Delete '{selected_kwd}'", help=f"'{selected_kwd}'의 모든 파일과 DB 데이터를 삭제합니다."):
-                    # 1. 벡터 DB 데이터 삭제
                     db_success = st.session_state.db_manager.delete_keyword_collection(selected_kwd)
-                    
-                    # 2. 물리적 파일 삭제
                     try:
                         shutil.rmtree(kwd_path)
                         file_success = True
@@ -120,12 +124,12 @@ elif menu == "ARCHIVE STATUS":
                     if db_success and file_success:
                         st.toast(f"'{selected_kwd}' 데이터 완전 삭제 완료", icon="🔥")
                         time.sleep(1)
-                        st.rerun() # UI 갱신
+                        st.rerun() 
 
-            # ChromaDB 색인 현황
+            # ChromaDB 색인 현황 보고
             st.markdown("---")
             st.subheader("Vector Database Status")
-            db_stats = st.session_state.db_manager.get_all_collection_stats() #
+            db_stats = st.session_state.db_manager.get_all_collection_stats() 
             if db_stats:
                 st.table(db_stats)
             else:
