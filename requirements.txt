@@ -1,3 +1,4 @@
+# python 3.11 기준
 # --- Core UI & Data Handling ---
 streamlit
 pandas
