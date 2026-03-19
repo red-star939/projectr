@@ -17,3 +17,6 @@ webdriver-manager
 # --- Vector Database & RAG ---
 chromadb
 sentence-transformers
+
+# -- xml파일 다루기 위함 --
+lxml
