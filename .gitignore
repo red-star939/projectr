@@ -1,7 +1,6 @@
 venv/
 __pycache__/
 data/chroma_db/
-model/
 *.pt
 *.bin
 .env
