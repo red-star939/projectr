@@ -14,20 +14,20 @@ C:\\Users\\USER\\projectr
 │  requirements.txt
 │
 ├─data
-│  ├─chroma\_db
+│  ├─chroma_db
 │  │
-│  ├─Financial\_Statements
+│  ├─Financial_Statements
 │  │
-│  └─News\_Reports
+│  └─News_Reports
 │
 ├─model
 │
 ├─src
-│  ├─financial\_agent
+│  ├─financial_agent
 │  │
-│  ├─news\_agent
+│  ├─news_agent
 │  │
-│  └─portfolio\_agent
+│  └─portfolio_agent
 │
 └─venv
 ```
