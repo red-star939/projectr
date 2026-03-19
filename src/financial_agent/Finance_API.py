@@ -36,10 +36,11 @@ def CallFinDescription(
         data = response.json()
         
         if data['status'] == '000':
-            # 파일로 저장하기
             with open('f{corp}.json', 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
-            
+                '''
+                여기에 특정 경로 저장 관련 코드 필요
+                '''
         else:
             print(f"오류 발생: {data['message']}")
     else:
