@@ -21,15 +21,14 @@ st.set_page_config(page_title="Project R", page_icon="BAT", layout="wide")
 
 # 사이드바 설정
 with st.sidebar:
-    st.image("https://img.icons8.com/ios-filled/100/ffffff/batman-old.png")
     st.title("Stock Control Center")
-    menu = st.radio("OPERATIONS", ["NEWS COLLECTOR"]) # DATABASE 제외
+    menu = st.radio("OPERATIONS", ["NEWS COLLECTOR"])
     st.markdown("---")
     st.info(f"STATUS: **NEWS_ONLY_MODE**")
 
 if menu == "NEWS COLLECTOR":
     st.header("🌐 Intelligence Gathering: News Stream")
-    st.write("실시간 뉴스 첩보를 수집하여 디스플레이합니다. (저장 기능 비활성)")
+    st.write("실시간 주식 정보를 수집하여 디스플레이합니다.")
 
     keyword = st.text_input("Enter Keyword and Press Enter", placeholder="Search intel...")
 
@@ -38,7 +37,7 @@ if menu == "NEWS COLLECTOR":
             results = fetch_news(keyword)
             
             if results:
-                st.write(f"🔍 {len(results)}건의 첩보를 입수했습니다.")
+                st.write(f"🔍 {len(results)}건의 정보를 입수했습니다.")
                 
                 # 결과 요약 탭
                 tab_g, tab_n, tab_d = st.tabs(["🔍 Google News", "🟢 Naver News", "🔵 Daum News"])
