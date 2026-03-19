@@ -7,7 +7,7 @@
 
 ### 구조도
 '''text
-(venv) C:\\Users\\USER\\projectr
+C:\\Users\\USER\\projectr
 │  .gitignore
 │  app.py
 │  README.md
