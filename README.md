@@ -32,4 +32,27 @@ C:\\Users\\USER\\projectr
 └─venv
 ```
 
+### Requirements 설명
+```
+# python 3.11 기준
+# --- Core UI & Data Handling ---
+streamlit
+pandas
+
+# --- AI & LLM (RTX 4050 Optimized) ---
+# [주의] GPU 가속을 위해 로컬 환경에 맞는 CUDA 버전에 따라 별도 빌드가 필요할 수 있습니다.
+llama-cpp-python
+
+# --- Web Scraping & API ---
+requests
+beautifulsoup4
+feedparser
+selenium
+webdriver-manager
+
+# --- Vector Database & RAG ---
+chromadb
+sentence-transformers
+```
+
 "2026-03-19 Invited"
