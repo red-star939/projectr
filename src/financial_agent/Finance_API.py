@@ -47,5 +47,3 @@ def CallFinDescription(
             print(f"오류 발생: {data['message']}")
     else:
         print(f"HTTP 요청 실패: {response.status_code}")
-
-CallFinDescription('SK하이닉스', '사업보고서', 2025)
