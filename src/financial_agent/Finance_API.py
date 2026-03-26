@@ -1,6 +1,7 @@
 import requests
 import json
 import utils_
+import os
 
 url = f"https://opendart.fss.or.kr/api/fnlttSinglAcnt.json"
 
@@ -36,11 +37,12 @@ def CallFinDescription(
         data = response.json()
         
         if data['status'] == '000':
-            with open('f{corp}.json', 'w', encoding='utf-8') as f:
+            save_dir = f"data/Financial_Statement/{corp}"
+            os.makedirs(save_dir, exist_ok=True)
+            file_path = os.path.join(save_dir, f"{corp}.json")
+            
+            with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
-                '''
-                여기에 특정 경로 저장 관련 코드 필요
-                '''
         else:
             print(f"오류 발생: {data['message']}")
     else:

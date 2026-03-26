@@ -1,6 +1,7 @@
 venv/
+venv1/
 __pycache__/
-data/chroma_db/
+data/
 model/
 *.pt
 *.bin
