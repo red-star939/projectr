@@ -1,1 +1,0 @@
-chromaDB로부터 정보를 불러와서 model에게 전달해주는 역할하는 agent
