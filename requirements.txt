@@ -13,3 +13,5 @@ chromadb
 sentence-transformers
 
 lxml
+
+python-dotenv
