@@ -1,0 +1,17 @@
+streamlit
+pandas
+
+# llama-cpp-python
+
+requests
+beautifulsoup4
+feedparser
+selenium
+webdriver-manager
+
+chromadb
+sentence-transformers
+
+lxml
+
+python-dotenv
