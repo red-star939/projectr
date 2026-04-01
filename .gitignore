@@ -11,3 +11,6 @@ model/
 *.gguf
 .env
 >>>>>>> Stashed changes
+data/ 
+crawled_news/ 
+record/ 
