@@ -5,4 +5,12 @@ data/
 model/
 *.pt
 *.bin
+<<<<<<< Updated upstream
 .env
+=======
+*.gguf
+.env
+>>>>>>> Stashed changes
+data/ 
+crawled_news/ 
+record/ 
