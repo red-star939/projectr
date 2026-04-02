@@ -3,7 +3,9 @@ venv1/
 __pycache__/
 data/
 model/
+src/news_agent/old/
 test.py
 *.pt
 *.bin
 *.env
+*.gguf
