@@ -2,7 +2,7 @@ import pandas as pd
 import json
 import sqlite3
 
-def FSpreproc(FSPath):
+def FSpreproc(FSPath, source="DART", report_type="사업보고서"):
     with open(FSPath, "r", encoding="utf-8") as f:
         data = json.load(f)
 
@@ -31,6 +31,8 @@ def FSpreproc(FSPath):
             if amount: # 값이 존재하는 경우만 추가
                 clean_amount = int(amount.replace(',', ''))
                 parsed_data.append({
+                    "source": source,
+                    "report_type": report_type,
                     "corp_code": corp_code,
                     "stock_code": stock_code,
                     "fs_div": fs_div,
@@ -42,11 +44,11 @@ def FSpreproc(FSPath):
 
     # 3. 깔끔한 DataFrame으로 변환 완료 (이를 to_sql 로 DB에 넣으면 됩니다)
     dfr=pd.DataFrame(parsed_data)
-    dfr.drop_duplicates(subset=['corp_code', 'fs_div', 'sj_div', 'account_nm', 'target_year'], keep='last', inplace=True)
+    dfr.drop_duplicates(subset=['source', 'report_type', 'corp_code', 'fs_div', 'sj_div', 'account_nm', 'target_year'], keep='last', inplace=True)
     return dfr
 
 if __name__ == "__main__":
-    a=FSpreproc("data/Financial_Statement/SK하이닉스/SK하이닉스.json")
+    a=FSpreproc("data/Financial_Statement/SK하이닉스/SK하이닉스.json", source="DART", report_type="사업보고서")
     
     # 텍스트 편집기에서 보기 좋게 들여쓰기(indent)를 포함하여 저장
     a.to_json("check_finance.json", orient='records', force_ascii=False, indent=4)

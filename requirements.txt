@@ -16,3 +16,4 @@ lxml
 readability-lxml
 
 python-dotenv
+yfinance

@@ -19,9 +19,9 @@ class FS():
     def to_sql(self, table_name, df, if_exists="append", index=False, subset=None):
         try:
             if if_exists == "append":
-                # 기본으로 회사, 보고서, 계정명, 연도 기준으로 중복 제거 (전달되지 않았을 경우)
+                # 기본으로 출처, 회사, 보고서, 계정명, 연도 기준으로 중복 제거 (전달되지 않았을 경우)
                 if subset is None:
-                    subset = ['corp_code', 'fs_div', 'sj_div', 'account_nm', 'target_year']
+                    subset = ['source', 'report_type', 'corp_code', 'fs_div', 'sj_div', 'account_nm', 'target_year']
                     
                 # 테이블이 이미 존재하는지 확인
                 cursor = self.conn.cursor()
