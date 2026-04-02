@@ -12,7 +12,7 @@ class FS():
         close() db 강제로 닫기. 코드 마지막에 꼭 넣기?
         '''
 
-        db_name = "data/Financial_Statement/FS.db"
+        db_name = "data/FS.db"
         self.db_name=db_name
         self.conn = sqlite3.connect(db_name)
         
