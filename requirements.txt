@@ -9,9 +9,10 @@ feedparser
 selenium
 webdriver-manager
 
-chromadb
+chromadb>=0.4.0
 sentence-transformers
 
 lxml
+readability-lxml
 
 python-dotenv
