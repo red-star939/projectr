@@ -3,6 +3,7 @@ venv1/
 __pycache__/
 data/
 model/
+test.py
 *.pt
 *.bin
 *.env

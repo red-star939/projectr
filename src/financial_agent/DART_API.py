@@ -1,8 +1,8 @@
 import requests
 import json
-import utils_
+from . import utils_
 import os
-from ...config import DART_API_KEY
+from config import DART_API_KEY
 
 url = f"https://opendart.fss.or.kr/api/fnlttSinglAcnt.json"
 
