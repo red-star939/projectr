@@ -1,8 +1,8 @@
 import yfinance as yf
 import pandas as pd
 import datetime
-from . import utils_
-from . import conSQL
+from src.financial_agent import utils_
+from src.financial_agent import conSQL
 
 def fetch_and_save_yfinance_info(corp_names):
     """

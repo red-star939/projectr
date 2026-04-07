@@ -1,4 +1,4 @@
-import conSQL
+from src.financial_agent import conSQL
 import json
 import os
 import pandas as pd
