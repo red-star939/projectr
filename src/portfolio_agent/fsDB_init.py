@@ -3,7 +3,7 @@ import chromadb
 from chromadb.utils import embedding_functions
 
 # [설정] 재무제표 DB 경로
-FS_DB_PATH = r"C:\Users\USER\projectr\data\FS_DB"
+FS_DB_PATH = r"projectr\data\FS_DB"
 
 # 디렉토리 유무 확인 및 생성
 if not os.path.exists(FS_DB_PATH):

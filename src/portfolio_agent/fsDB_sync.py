@@ -6,8 +6,8 @@ import re
 from chromadb.utils import embedding_functions
 
 # [설정] 마스터 홍이 지정한 경로 및 키워드
-FS_DB_PATH = r"C:\Users\USER\projectr\data\FS_DB"
-JSON_SOURCE_DIR = r"C:\Users\USER\projectr\data\jsonDB"
+FS_DB_PATH = r"projectr\data\FS_DB"
+JSON_SOURCE_DIR = r"projectr\data\jsonDB"
 TARGET_KEYWORD = "SK하이닉스"
 
 def sanitize_collection_name(name):

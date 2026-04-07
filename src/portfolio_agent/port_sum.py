@@ -16,7 +16,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(BASE_DIR)) # C:\Users\USER\projec
 NEWS_DB_PATH = os.path.join(PROJECT_ROOT, "data", "News_DB")
 FS_DB_PATH = os.path.join(PROJECT_ROOT, "data", "FS_DB")
 # [해결] 리포트 저장 폴더 경로 정의 및 고정
-PORTFOLIO_DIR = r"C:\Users\USER\projectr\data\Portfolio"
+PORTFOLIO_DIR = r"projectr\data\Portfolio"
 MODEL_PATH = os.path.join(PROJECT_ROOT, "src", "news_agent", "model", "EXAONE-3.0-7.8B-Instruct-Q4_K_M.gguf")
 
 def sanitize_name(name, prefix="kwd"):
