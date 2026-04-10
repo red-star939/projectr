@@ -37,7 +37,15 @@ class FS():
             return True
         except Exception as e:
             print(f"sql 저장 도중 에러 발생: {e}")
-            return None    
+    def has_table(self, table_name):
+        """데이터베이스에 해당 테이블(회사명)이 존재하는지 확인합니다."""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}';")
+            return cursor.fetchone() is not None
+        except sqlite3.Error as e:
+            return False
+
     def search_sql(self, q):
         """
         DB 이름과 SQL 쿼리를 입력받아 결과를 Pandas DataFrame으로 반환합니다.

@@ -46,12 +46,13 @@ def CallFinDescription(
                 with open(file_path, 'w', encoding='utf-8') as f:
                     json.dump(data, f, ensure_ascii=False, indent=4)
                 print(f"✅ [{corp}] {year}년 {report} 수집 및 파일 저장 완료")
+                return file_path
             else:
                 print(f"오류 발생: {data['message']}")
+                return None
         else:
             print(f"HTTP 요청 실패: {response.status_code}")
-        
-        return
+            return None
         
     else:
         # 캐싱 처리: 파일이 이미 존재하면 다시 API를 호출하지 않고 넘어갑니다.
@@ -60,7 +61,7 @@ def CallFinDescription(
                 # 파일이 손상되지 않았는지 파싱용으로만 체크
                 json.load(f)
             print(f"💡 [{corp}] {year}년 {report} 데이터는 이미 안전하게 캐싱되어 있습니다. 다운로드를 스킵합니다.")
-            return
+            return file_path
         except json.JSONDecodeError:
             print(f"🚨 캐시 파일이 비어있거나 손상되었습니다. 수집을 다시 진행하려면 '{file_path}' 파일을 직접 삭제해주세요.")
-            return
+            return None
