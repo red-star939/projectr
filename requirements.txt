@@ -17,3 +17,5 @@ readability-lxml
 
 python-dotenv
 yfinance
+
+FinanceDataReader
