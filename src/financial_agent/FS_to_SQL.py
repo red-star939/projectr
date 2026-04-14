@@ -1,6 +1,7 @@
 import pandas as pd
 import json
-import sqlite3
+
+import datetime
 
 def FSpreproc(FSPath, source="DART", report_type="사업보고서"):
     with open(FSPath, "r", encoding="utf-8") as f:
@@ -50,20 +51,19 @@ def FSpreproc(FSPath, source="DART", report_type="사업보고서"):
 def ensure_company_data(corp):
     """
     한 번도 불린 적 없는 회사(DB에 테이블이 없음)인 경우,
-    2020년~2024년까지의 사업보고서(연간보고서)를 자동으로 가져와 DB에 저장합니다.
+    근래 10년 내의 사업보고서(연간보고서)를 자동으로 가져와 DB에 저장합니다.
     (yfinance 데이터 제외, 연간보고서 한정)
     """
-    try:
-        from . import conSQL
-        from . import DART_API
-    except ImportError:
-        import conSQL
-        import DART_API
+    from src.financial_agent import conSQL
+    from src.financial_agent import DART_API
 
     db = conSQL.FS()
     if not db.has_table(corp):
-        print(f"[{corp}] DB에 기존 데이터가 없습니다. 2020~2024년 사업보고서 수집을 일괄 시작합니다.")
-        for year in range(2020, 2025):
+        current_year = datetime.datetime.now().year
+        start_year = current_year - 9
+        
+        print(f"[{corp}] DB에 기존 데이터가 없습니다. 최근 10년({start_year}~{current_year}년) 사업보고서 수집을 일괄 시작합니다.")
+        for year in range(start_year, current_year + 1):
             print(f"  👉 [{corp}] {year}년 사업보고서 요청 중...")
             file_path = DART_API.CallFinDescription(corp=corp, report="사업보고서", year=year)
             
@@ -72,7 +72,7 @@ def ensure_company_data(corp):
                 if not df.empty:
                     # 중복 데이터는 conSQL에서 자동으로 처리됨
                     db.to_sql(table_name=corp, df=df, if_exists="append")
-        print(f"🎉 [{corp}] 2020~2024년 사업보고서 수집 및 DB 저장이 모두 완료되었습니다!")
+        print(f"🎉 [{corp}] 최근 10년({start_year}~{current_year}년) 사업보고서 수집 및 DB 저장이 모두 완료되었습니다!")
     else:
         print(f"💡 [{corp}] 회사는 이미 DB에 존재합니다. (초기 연속 수집 스킵)")
     db.close()

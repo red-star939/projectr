@@ -1,7 +1,8 @@
 import pandas as pd
 import yfinance as yf
-from . import yfinance_api
-from . import conSQL
+from src.financial_agent import yfinance_api
+from src.financial_agent import conSQL
+from src.financial_agent import Sector
 
 def get_current_kospi():
     """
@@ -20,7 +21,7 @@ def get_current_kospi():
         return None
 
 
-def calculate_correlation(corp, kospi_value=None):
+def correlation_with_KOSPI(corp, kospi_value=None):
     """
     특정 회사의 현재 주식 지표와 KOSPI 지수를 바탕으로 상관관계(correlation)를 계산합니다.
     코스피 값은 DB에 저장되지 않으며 임시로 계산에만 활용됩니다.
@@ -73,10 +74,35 @@ def calculate_correlation(corp, kospi_value=None):
 
     return correlation_result
 
+
+def compare_with_sector(corp):
+    """
+    입력 받은 회사의 섹터를 추출하고, 해당 섹터 내 경쟁 회사들의 목록을 가져와 
+    지표를 비교(Correlation)하는 기능의 뼈대 함수입니다.
+    
+    :param corp: 비교 기준이 될 회사명
+    :return: 비교 결과값 (사용자 구현 예정)
+    """
+    # 1. 입력된 회사의 섹터를 추출합니다.
+    sector_name = Sector.get_sector(corp)
+    print(f"🏢 [{corp}]의 섹터를 분석합니다. -> '{sector_name}'")
+    
+    # 2. 해당 섹터에 포함된 동일 업종의 회사 리스트를 가져옵니다.
+    corps_in_sector = Sector.get_corps_in_sector(sector_name)
+    print(f"📊 '{sector_name}' 섹터에는 총 {len(corps_in_sector)}개의 회사가 존재합니다.")
+    
+    # TODO: 이 이후의 세부 지표 비교 계산 및 반환값 설정은 사용자가 직접 구현합니다.
+    
+    pass
+
+
 if __name__ == "__main__":
     # 간단한 테스트 동작 (KOSPI 값이 2650.12 라고 가정)
     corp_name = "SK하이닉스"
     current_kospi = 2650.12
     
-    result = calculate_correlation(corp_name, current_kospi)
-    print(f"\n최종 리턴된 상관관계 값: {result}")
+    result = correlation_with_KOSPI(corp_name, current_kospi)
+    print(f"\n최종 리턴된 KOSPI 상관관계 값: {result}")
+    
+    print("\n[섹터 비교 기반 테스트 시작]")
+    compare_with_sector(corp_name)
