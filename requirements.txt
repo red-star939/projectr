@@ -18,4 +18,6 @@ readability-lxml
 python-dotenv
 yfinance
 
-FinanceDataReader
+# FinanceDataReader
+finance-datareader
+tabulate
