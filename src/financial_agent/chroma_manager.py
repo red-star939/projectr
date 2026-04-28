@@ -3,34 +3,38 @@ from chromadb.utils import embedding_functions
 from datetime import datetime
 import os
 from pathlib import Path
+import streamlit as st # [추가] 세션 상태 확인을 위해 필요
 
 class FinancialChromaDB:
     def __init__(self):
-        # [상대 경로 설정] 현재 파일 위치 기준 프로젝트 루트의 data/FS_DB 폴더 지정
+        # [1] 경로 설정 (프로젝트 루트의 data/FS_DB)
         base_dir = Path(__file__).resolve().parent.parent.parent
         db_path = str(base_dir / "data" / "FS_DB")
-        
-        # 폴더 자동 생성
         os.makedirs(db_path, exist_ok=True)
         
-        # 로컬 보존형 클라이언트 설정
+        # [2] DB 클라이언트 연결
         self.client = chromadb.PersistentClient(path=db_path)
 
-        self.embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name="jhgan/ko-sroberta-multitask"
-        )
+        # [3] 임베딩 모델 준비 상태 체크 및 로드 [핵심 수정 사항]
+        # app_v01.py에서 예열된 모델이 있는지 확인합니다.
+        if 'embedding_fn' in st.session_state:
+            self.embedding_fn = st.session_state.embedding_fn
+        else:
+            # 예열된 모델이 없을 경우 여기서 직접 로드합니다.
+            self.embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+                model_name="jhgan/ko-sroberta-multitask"
+            )
+            # 다른 에이전트와 공유할 수 있도록 세션에 저장합니다.
+            st.session_state.embedding_fn = self.embedding_fn
 
-        # 리포트 저장용 컬렉션 생성 또는 로드
+        # [4] 컬렉션 확보
         self.collection = self.client.get_or_create_collection(
             name="financial_reports",
             embedding_function=self.embedding_fn
         )
 
-
     def upsert_report(self, corp_name, content, metadata):
-        """
-        리포트 내용을 ChromaDB에 저장 또는 최신본으로 갱신합니다.
-        """
+        """재무 보고서를 DB에 저장하거나 갱신합니다."""
         doc_id = f"REPORT_{corp_name}"
         self.collection.upsert(
             documents=[content],
@@ -40,9 +44,7 @@ class FinancialChromaDB:
         return True
 
 def save_report_to_db(corp, content, sector, stock_code):
-    """
-    외부 모듈 연동용 래퍼 함수
-    """
+    """외부 에이전트 호출용 래퍼 함수"""
     try:
         manager = FinancialChromaDB()
         metadata = {
@@ -54,5 +56,6 @@ def save_report_to_db(corp, content, sector, stock_code):
         manager.upsert_report(corp, content, metadata)
         return True
     except Exception as e:
-        print(f"ChromaDB 인덱싱 에러: {e}")
+        # 에러 발생 시 상세 정보 출력 (NameError 등 방지)
+        st.error(f"ChromaDB 인덱싱 에러: {e}")
         return False

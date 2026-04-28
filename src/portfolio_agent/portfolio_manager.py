@@ -3,19 +3,27 @@ from chromadb.utils import embedding_functions
 import os
 import sys
 import re
+import streamlit as st # [추가] 세션 상태 확인용
 from datetime import datetime
 from pathlib import Path
 
 class BatPortfolioAgent:
     def __init__(self):
-        # [상대 경로] Root 확보
+        # [1] 상대 경로 설정 (프로젝트 루트 확보)
         self.root_dir = Path(__file__).resolve().parent.parent.parent
         
-        self.embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name="jhgan/ko-sroberta-multitask"
-        )
+        # [2] 공유 임베딩 모델 확인 및 지연 로딩 [핵심 수정 사항]
+        if 'embedding_fn' in st.session_state:
+            self.embedding_fn = st.session_state.embedding_fn
+            print("[*] Unified Dashboard의 임베딩 엔진을 공유합니다.")
+        else:
+            # 예열된 모델이 없을 경우 직접 로드하여 세션에 공유
+            self.embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+                model_name="jhgan/ko-sroberta-multitask"
+            )
+            st.session_state.embedding_fn = self.embedding_fn
         
-        # 지능형 데이터베이스 경로 설정
+        # [3] 지능형 데이터베이스 경로 설정
         ns_db_path = str(self.root_dir / "data" / "NS_DB")
         fs_db_path = str(self.root_dir / "data" / "FS_DB")
         
@@ -56,9 +64,10 @@ class BatPortfolioAgent:
         
         시장 흐름과 내재 가치 사이의 괴리를 분석하고 최종 비중을 제안하십시오.
         """
-        return reporter_instance._generate("분석가 모드", prompt, stream=True)
+        return reporter_instance._generate("수석 분석가 모드", prompt, stream=True)
 
     def save_portfolio_report(self, corp_name, content):
+        """결과 저장"""
         save_path = self.root_dir / "data" / "Portfolio"
         os.makedirs(save_path, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
