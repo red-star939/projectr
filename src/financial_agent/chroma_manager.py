@@ -1,4 +1,5 @@
 import chromadb
+from chromadb.utils import embedding_functions
 from datetime import datetime
 import os
 from pathlib import Path
@@ -14,8 +15,17 @@ class FinancialChromaDB:
         
         # 로컬 보존형 클라이언트 설정
         self.client = chromadb.PersistentClient(path=db_path)
+
+        self.embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name="jhgan/ko-sroberta-multitask"
+        )
+
         # 리포트 저장용 컬렉션 생성 또는 로드
-        self.collection = self.client.get_or_create_collection(name="financial_reports")
+        self.collection = self.client.get_or_create_collection(
+            name="financial_reports",
+            embedding_function=self.embedding_fn
+        )
+
 
     def upsert_report(self, corp_name, content, metadata):
         """
