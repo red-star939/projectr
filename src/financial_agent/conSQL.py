@@ -74,15 +74,39 @@ class FS():
             print(f"섹터 검색 중 에러 발생: {e}")
             return "오류"
 
-    def get_corps_by_sector(self, sector):
+    def get_corps_by_sector(self, sector, sort_by_marketcap=True):
         """
         특정 섹터 이름이 주어지면 해당 섹터에 포함된 모든 회사 리스트를 가져옵니다.
+        sort_by_marketcap이 True일 경우, FS.db 내 각 회사의 최신 marketCap 지표를 조회하여 내림차순(기업가치 높은 순)으로 정렬하여 반환합니다.
         """
         try:
             cursor = self.conn.cursor()
             cursor.execute("SELECT corp_name FROM SECTORS WHERE sector=?", (sector,))
             results = cursor.fetchall()
-            return [row[0] for row in results] if results else []
+            corps = [row[0] for row in results] if results else []
+            
+            if not sort_by_marketcap or not corps:
+                return corps
+                
+            # 각 회사의 개별 테이블에 접근하여 최신 marketCap을 가져와 정렬합니다.
+            corp_marcap = []
+            for corp in corps:
+                marcap = 0.0
+                try:
+                    # 개별 테이블에서 marketCap 조회
+                    cursor.execute(f"SELECT amount FROM '{corp}' WHERE account_nm='marketCap' ORDER BY target_year DESC LIMIT 1")
+                    res = cursor.fetchone()
+                    if res and res[0] is not None:
+                        marcap = float(res[0])
+                except sqlite3.Error:
+                    # 테이블이 없거나 데이터가 없는 경우 0.0으로 처리
+                    pass
+                corp_marcap.append((corp, marcap))
+                
+            # 시가총액(marketCap) 내림차순으로 정렬
+            corp_marcap.sort(key=lambda x: x[1], reverse=True)
+            return [c[0] for c in corp_marcap]
+            
         except sqlite3.Error as e:
             print(f"회사 목록 검색 중 에러 발생: {e}")
             return []

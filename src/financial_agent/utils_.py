@@ -5,6 +5,11 @@ def read_xml(xml_file):
     return df
 
 dartCodes=read_xml('src/financial_agent/CORPCODE.xml')
+
+# 동명 회사 존재 시 상장사(stock_code가 있는 회사)가 딕셔너리에 최종적으로 덮어씌워지도록 정렬
+dartCodes['is_listed'] = dartCodes['stock_code'].apply(lambda x: str(x).strip() != '')
+dartCodes = dartCodes.sort_values('is_listed')
+
 corp_code=dict(zip(dartCodes['corp_name'],dartCodes['corp_code']))
 stock_code=dict(zip(dartCodes['corp_name'],dartCodes['stock_code']))
 

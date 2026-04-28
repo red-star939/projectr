@@ -1,3 +1,9 @@
+import sys
+
+# Windows 콘솔 환경에서 이모지 출력 시 발생하는 cp949 인코딩 에러 방지
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 import yfinance as yf
 import pandas as pd
 import datetime
