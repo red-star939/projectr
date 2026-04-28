@@ -14,13 +14,11 @@ C:\\Users\\USER\\projectr
 │  requirements.txt
 │
 ├─data
-│  ├─chroma_db
+│  ├─FS_DB
 │  │
-│  ├─Financial_Statements
+│  ├─NS_DB
 │  │
-│  └─News_Reports
-│
-├─model
+│  └─Portfolio
 │
 ├─src
 │  ├─financial_agent
@@ -35,24 +33,35 @@ C:\\Users\\USER\\projectr
 ### Requirements 설명
 ```
 # python 3.11 기준
+
 # --- Core UI & Data Handling ---
-streamlit
-pandas
+streamlit               # 배트 컴퓨터 중앙 관제 터미널 및 에이전트 UI 구성
+pandas<2.2.0            # 재무제표 및 지표 데이터 핸들링 (호환성을 위해 2.2.0 미만 유지)
+numpy<2.0.0             # 수치 연산 및 상관계수 계산 (np.matrix 제거된 2.0 미만 필수)
+tabulate                # 분석 데이터를 마크다운 표 형식으로 변환
 
 # --- AI & LLM (RTX 4050 Optimized) ---
-# [주의] GPU 가속을 위해 로컬 환경에 맞는 CUDA 버전에 따라 별도 빌드가 필요할 수 있습니다.
-llama-cpp-python
+# [주의] RTX 4050 GPU 가속(CUDA)을 위해 로컬 환경에 맞는 빌드가 필요합니다.
+# pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121
+llama-cpp-python        # EXAONE-3.0 모델 구동 및 4-bit KV Cache 연산 엔진
 
-# --- Web Scraping & API ---
-requests
-beautifulsoup4
-feedparser
-selenium
-webdriver-manager
+# --- Web Scraping & Content Extraction ---
+requests                # 외부 API 및 웹 데이터 요청 기본 라이브러리
+beautifulsoup4          # 수집된 HTML 데이터에서 핵심 텍스트 파싱
+feedparser              # 구글 뉴스 RSS 피드 분석 및 링크 추출
+selenium                # 동적 웹페이지 크롤링을 위한 브라우저 자동화
+webdriver-manager       # 크롬 드라이버 자동 관리 및 버전 동기화
+lxml                    # 고속 XML/HTML 파싱 엔진
+readability-lxml        # 뉴스 본문만 정교하게 추출하는 지능형 파서
 
 # --- Vector Database & RAG ---
-chromadb
-sentence-transformers
+chromadb>=0.4.0         # 뉴스(News_DB), 요약(NS_DB), 재무(FS_DB) 지식 저장소
+sentence-transformers   # jhgan/ko-sroberta-multitask 임베딩 모델 구동
+
+# --- Financial Data & API ---
+yfinance                # 글로벌 시장 지표 및 실시간 주가 데이터 수집
+finance-datareader      # 국내 시장 지수(KOSPI) 및 종목 코드 동기화
+python-dotenv           # API 키 및 시스템 환경 변수 보안 관리
 ```
 
 "2026-03-19 Invited"
