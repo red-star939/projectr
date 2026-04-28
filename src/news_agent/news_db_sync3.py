@@ -9,7 +9,7 @@ from chromadb.utils import embedding_functions
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(os.path.dirname(BASE_DIR))
 DB_PATH = os.path.join(PROJECT_ROOT, "data", "News_DB")
-SOURCE_DIR = os.path.join(BASE_DIR, "src", "news_agent", "crawled_news")
+SOURCE_DIR = os.path.join(BASE_DIR, "crawled_news")
 
 def sanitize_collection_name(name):
     encoded = "".join([char if re.match(r'[a-zA-Z0-9]', char) else f"_{ord(char):x}" for char in name])

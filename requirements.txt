@@ -1,6 +1,6 @@
 streamlit
-pandas
-
+pandas<2.2.0
+numpy<2.0.0
 # llama-cpp-python
 
 requests
@@ -9,7 +9,15 @@ feedparser
 selenium
 webdriver-manager
 
-chromadb
+chromadb>=0.4.0
 sentence-transformers
 
 lxml
+readability-lxml
+
+python-dotenv
+yfinance
+
+# FinanceDataReader
+finance-datareader
+tabulate

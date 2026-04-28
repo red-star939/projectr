@@ -1,16 +1,12 @@
 venv/
 venv1/
 __pycache__/
-data/
+data/Financial_Statement/
+data/News_Reports/
 model/
+src/news_agent/old/
+test.py
 *.pt
 *.bin
-<<<<<<< Updated upstream
-.env
-=======
+*.env
 *.gguf
-.env
->>>>>>> Stashed changes
-data/ 
-crawled_news/ 
-record/ 
