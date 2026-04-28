@@ -35,13 +35,13 @@ C:\\Users\\USER\\projectr
 # python 3.11 기준
 
 # --- Core UI & Data Handling ---
-streamlit               # 배트 컴퓨터 중앙 관제 터미널 및 에이전트 UI 구성
+streamlit               # UI 구성
 pandas<2.2.0            # 재무제표 및 지표 데이터 핸들링 (호환성을 위해 2.2.0 미만 유지)
 numpy<2.0.0             # 수치 연산 및 상관계수 계산 (np.matrix 제거된 2.0 미만 필수)
 tabulate                # 분석 데이터를 마크다운 표 형식으로 변환
 
 # --- AI & LLM (RTX 4050 Optimized) ---
-# [주의] RTX 4050 GPU 가속(CUDA)을 위해 로컬 환경에 맞는 빌드가 필요합니다.
+# [주의] NVIDIA GPU 가속(CUDA)을 위해 로컬 환경에 맞는 빌드가 필요합니다.
 # pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121
 llama-cpp-python        # EXAONE-3.0 모델 구동 및 4-bit KV Cache 연산 엔진
 
