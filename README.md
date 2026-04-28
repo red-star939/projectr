@@ -35,7 +35,7 @@ C:\\Users\\USER\\projectr
 # python 3.11 기준
 
 # --- Core UI & Data Handling ---
-streamlit               # 배트 컴퓨터 중앙 관제 터미널 및 에이전트 UI 구성
+streamlit               # UI 구성
 pandas<2.2.0            # 재무제표 및 지표 데이터 핸들링 (호환성을 위해 2.2.0 미만 유지)
 numpy<2.0.0             # 수치 연산 및 상관계수 계산 (np.matrix 제거된 2.0 미만 필수)
 tabulate                # 분석 데이터를 마크다운 표 형식으로 변환
