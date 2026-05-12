@@ -115,9 +115,36 @@ def fetch_and_save_intl_financials(corp_ticker: str) -> bool:
         return False
 
 
+def _collect_intl_dividend_history(ticker_obj, ticker: str, n_years: int = 5) -> list:
+    """해외 종목 연간 배당 이력 수집 (yfinance .dividends)."""
+    try:
+        divs = ticker_obj.dividends
+        if divs is None or divs.empty:
+            return []
+        annual = divs.groupby(divs.index.year).sum().tail(n_years)
+        return [
+            {
+                "source":      "YFINANCE",
+                "report_type": "배당이력",
+                "corp_code":   ticker,
+                "stock_code":  ticker,
+                "fs_div":      "YF",
+                "sj_div":      "DIV_HIST",
+                "account_nm":  "연간배당",
+                "target_year": int(year),
+                "amount":      float(amount),
+            }
+            for year, amount in annual.items()
+            if not pd.isna(amount)
+        ]
+    except Exception as e:
+        print(f"   ⚠️ [{ticker}] 배당 이력 수집 실패: {e}")
+        return []
+
+
 def fetch_and_save_intl_yf_info(corp_ticker: str) -> bool:
     """
-    해외 종목의 yfinance info 시장 지표를 수집하여 FS.db 에 YFINANCE source 로 저장한다.
+    해외 종목의 yfinance info 시장 지표 + 배당 이력을 FS.db 에 저장.
 
     yfinance_api.fetch_and_save_yfinance_info 의 해외 종목 버전으로,
     .KS/.KQ 변환 없이 ticker 를 직접 사용한다.
@@ -155,11 +182,18 @@ def fetch_and_save_intl_yf_info(corp_ticker: str) -> bool:
             return False
 
         db = conSQL.FS(init_sectors=False)
-        df = pd.DataFrame(parsed_data)
         subset = ['source', 'report_type', 'corp_code', 'fs_div', 'sj_div', 'account_nm', 'target_year']
+        df = pd.DataFrame(parsed_data)
         db.to_sql(corp_ticker, df, subset=subset)
-        db.close()
         print(f"✅ [{corp_ticker}] yfinance 시장 지표 {len(df)}개 저장 완료")
+
+        # 배당 이력 (Phase 3)
+        div_records = _collect_intl_dividend_history(ticker_obj, corp_ticker)
+        if div_records:
+            db.to_sql(corp_ticker, pd.DataFrame(div_records), subset=subset)
+            print(f"   ✅ [{corp_ticker}] 연간 배당 {len(div_records)}건 저장")
+
+        db.close()
         return True
 
     except Exception as e:

@@ -78,10 +78,20 @@ def main():
                     intl_utils.sync_intl_sector(target_corp)
                     sector_nm = Sector.get_sector(target_corp)
 
-                    # 4. 벤치마크 상관계수 계산 및 DB 저장
-                    st.write("벤치마크 상관계수 계산 중...")
+                    # 4. 5년 OHLCV 시계열 1회 수집 (상관계수 + 기술적 지표 공유)
+                    st.write("5년 주가 시계열 수집 중...")
                     benchmark_idx = market_index_map.get_benchmark_index(target_corp)
-                    bench_corr = Extract_corr.correlation_with_benchmark(target_corp, benchmark_idx)
+                    corp_hist = Extract_corr.get_5y_history(target_corp)
+                    bench_hist = Extract_corr.get_5y_history(benchmark_idx)
+                    corp_close = corp_hist['Close'].dropna() if not corp_hist.empty else None
+                    bench_close = bench_hist['Close'].dropna() if not bench_hist.empty else None
+
+                    # 5. 벤치마크 상관계수 계산 및 DB 저장
+                    st.write("벤치마크 상관계수 계산 중...")
+                    bench_corr = Extract_corr.correlation_with_benchmark(
+                        target_corp, benchmark_idx,
+                        corp_close=corp_close, benchmark_close=bench_close,
+                    )
 
                     db = conSQL.FS(init_sectors=False)
                     curr_year = datetime.now().year
@@ -94,11 +104,14 @@ def main():
                             "target_year": curr_year, "amount": bench_corr,
                         }]))
 
-                    # 5. 투자 지표 계산 (INDICATOR source)
+                    # 6. 투자 지표 계산 (펀더멘털 + 기술적)
                     st.write("투자 지표(PER·PBR·ROE 등) 계산 중...")
                     Extract_corr.compute_financial_indicators(target_corp)
 
-                    # 6. 보고서 생성
+                    st.write("기술적 지표(RSI·MACD·BB 등) 계산 중...")
+                    Extract_corr.compute_technical_indicators(target_corp, hist=corp_hist)
+
+                    # 7. 보고서 생성
                     df = db.search_sql(target_corp)
                     db.close()
                     report_md = create_intl_markdown_template(target_corp, sector_nm, df)
@@ -131,9 +144,18 @@ def main():
                 c_code = utils_.call_corp_code(target_corp)
                 s_code = utils_.call_stock_code(target_corp)
 
-                # 2. 상관관계 분석 및 DB 저장
+                # 2. 5년 OHLCV 시계열 1회 수집 (상관계수 + 기술적 지표 공유)
+                st.write("5년 주가 시계열 수집 중...")
+                corp_hist = Extract_corr.get_5y_history(target_corp)
+                kospi_hist = Extract_corr.get_5y_history("KOSPI")
+                corp_close = corp_hist['Close'].dropna() if not corp_hist.empty else None
+                kospi_close = kospi_hist['Close'].dropna() if not kospi_hist.empty else None
+
+                # 3. 상관관계 분석 (사전 수집 시계열 재사용)
                 st.write("시장 및 섹터 상관관계 분석 중...")
-                kospi_corr = Extract_corr.correlation_with_KOSPI(target_corp)
+                kospi_corr = Extract_corr.correlation_with_KOSPI(
+                    target_corp, corp_close=corp_close, kospi_close=kospi_close
+                )
                 sector_corrs = Extract_corr.compare_with_sector(target_corp)
 
                 curr_year = datetime.now().year
@@ -159,9 +181,13 @@ def main():
                 if corr_records:
                     db.to_sql(target_corp, pd.DataFrame(corr_records))
 
-                # 3. 투자 지표 계산 (INDICATOR source)
+                # 4. 투자 지표 계산 (INDICATOR/펀더멘털)
                 st.write("투자 지표(PER·PBR·ROE 등) 계산 중...")
                 Extract_corr.compute_financial_indicators(target_corp)
+
+                # 5. 기술적 지표 계산 (INDICATOR/MKT — 사전 수집 시계열 재사용)
+                st.write("기술적 지표(RSI·MACD·BB 등) 계산 중...")
+                Extract_corr.compute_technical_indicators(target_corp, hist=corp_hist)
 
                 df = db.search_sql(target_corp)
                 report_md = fs_report_test.create_markdown_template(
@@ -169,7 +195,7 @@ def main():
                     corp_code=c_code, stock_code=s_code, df=df,
                 )
 
-                # 4. ChromaDB 저장
+                # 6. ChromaDB 저장
                 st.write("지식 베이스(FS_DB) 인덱싱 중...")
                 save_success = chroma_manager.save_report_to_db(
                     corp=target_corp, content=report_md,

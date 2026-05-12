@@ -21,18 +21,62 @@ _ACCOUNT_LABEL: dict[str, str] = {
     "유동부채":   "Current Liabilities",
 }
 
+# INDICATOR fs_div → 카테고리 영문 제목
+_FSDIV_TITLE = {
+    'VAL':    'Valuation',
+    'PROF':   'Profitability & Efficiency',
+    'GROWTH': 'Growth',
+    'STAB':   'Stability & Health',
+    'CF':     'Cash Flow Quality',
+    'DIV':    'Dividend',
+    'MKT':    'Market / Sentiment',
+}
+_FSDIV_ORDER = ['VAL', 'PROF', 'GROWTH', 'STAB', 'CF', 'DIV', 'MKT']
+
 
 def _yf(yf_info: dict, key: str, default: str = "N/A") -> str:
     v = yf_info.get(key, default)
     return str(v) if v not in (None, "nan", "") else default
 
 
-def _ind(indicators: dict, key: str) -> str:
-    v = indicators.get(key)
+def _fmt_indicator(amount, unit) -> str:
+    """INDICATOR 값을 단위에 맞춰 표시 문자열로 변환."""
     try:
-        return f"{float(v):.2f}"
+        v = float(amount)
     except (TypeError, ValueError):
         return "N/A"
+    if unit == '%':
+        return f"{v:.2f}%"
+    if unit == 'x':
+        return f"{v:.2f}x"
+    if unit == '일':
+        return f"{v:.1f} days"
+    if unit == '점수':
+        return f"{v:.2f}"
+    return f"{v:,.0f}"
+
+
+def _build_indicator_sections(ind_df: pd.DataFrame) -> str:
+    """INDICATOR DataFrame → 카테고리별 마크다운 테이블 묶음 (영문)."""
+    if ind_df is None or ind_df.empty:
+        return "*No computed indicators available.*"
+
+    latest = (ind_df.sort_values('target_year', ascending=False)
+                    .drop_duplicates(subset=['account_nm'], keep='first'))
+
+    md = ""
+    for fs_div in _FSDIV_ORDER:
+        rows = latest[latest['fs_div'] == fs_div]
+        if rows.empty:
+            continue
+        title = _FSDIV_TITLE.get(fs_div, fs_div)
+        md += f"\n### {title}\n"
+        md += "| Metric | Value | Source |\n| :--- | ---: | :--- |\n"
+        for _, r in rows.iterrows():
+            val = _fmt_indicator(r['amount'], r['sj_div'])
+            src = str(r.get('report_type', ''))
+            md += f"| **{r['account_nm']}** | {val} | `{src}` |\n"
+    return md or "*No categorised indicators available.*"
 
 
 def create_intl_markdown_template(ticker: str, sector: str, df: pd.DataFrame) -> str:
@@ -56,7 +100,6 @@ def create_intl_markdown_template(ticker: str, sector: str, df: pd.DataFrame) ->
             index="target_year", columns="account_nm", values="amount", aggfunc="last"
         ).sort_index(ascending=False)
         pivot = pivot.rename(columns=_ACCOUNT_LABEL)
-        # 열 순서 고정
         ordered_cols = [v for v in _ACCOUNT_LABEL.values() if v in pivot.columns]
         pivot = pivot[ordered_cols]
         fs_table_md = pivot.to_markdown()
@@ -73,14 +116,9 @@ def create_intl_markdown_template(ticker: str, sector: str, df: pd.DataFrame) ->
     except (ValueError, TypeError):
         m_cap_str = "N/A"
 
-    # ── 3. 투자 지표 (INDICATOR source) ──────────────────────────
-    ind_df = df[df["source"] == "INDICATOR"]
-    indicators = {}
-    for _, row in ind_df.iterrows():
-        try:
-            indicators[row["account_nm"]] = float(row["amount"])
-        except (ValueError, TypeError):
-            pass
+    # ── 3. INDICATOR 섹션 ────────────────────────────────────────
+    ind_df = df[df["source"] == "INDICATOR"] if "source" in df.columns else pd.DataFrame()
+    indicator_md = _build_indicator_sections(ind_df)
 
     # ── 4. 보고서 조립 ────────────────────────────────────────────
     return f"""# 📊 Equity Analysis Report: {ticker}
@@ -94,6 +132,7 @@ def create_intl_markdown_template(ticker: str, sector: str, df: pd.DataFrame) ->
 | **Industry** | {_yf(yf_info, 'industryDisp')} | `yfinance` |
 | **Exchange** | {_yf(yf_info, 'fullExchangeName')} | `yfinance` |
 | **Currency** | {_yf(yf_info, 'financialCurrency')} | `yfinance` |
+| **Market Cap** | {m_cap_str} | `yfinance` |
 
 ---
 
@@ -104,35 +143,9 @@ def create_intl_markdown_template(ticker: str, sector: str, df: pd.DataFrame) ->
 
 ---
 
-## 3. Valuation
-| Metric | Value |
-| :--- | :--- |
-| **PER (Forward)** | {_ind(indicators, 'PER')}x |
-| **PBR** | {_ind(indicators, 'PBR')}x |
-| **PSR** | {_ind(indicators, 'PSR')}x |
-| **PEG** | {_ind(indicators, 'PEG')}x |
-| **EV / EBITDA** | {_ind(indicators, 'EV/EBITDA')}x |
-| **Market Cap** | {m_cap_str} |
-
----
-
-## 4. Profitability & Stability
-| Metric | Value |
-| :--- | :--- |
-| **ROE** | {_ind(indicators, 'ROE')}% |
-| **ROA** | {_ind(indicators, 'ROA')}% |
-| **Operating Margin** | {_ind(indicators, '영업이익률')}% |
-| **Debt Ratio** | {_ind(indicators, '부채비율')}% |
-| **Current Ratio** | {_ind(indicators, '유동비율')}% |
-| **Operating CF Quality** | {_ind(indicators, '영업CF품질비율')}x |
-
----
-
-## 5. Dividend
-| Metric | Value |
-| :--- | :--- |
-| **Dividend Yield** | {_ind(indicators, '배당수익률')}% |
-| **Payout Ratio** | {_ind(indicators, '배당성향')}% |
+## 3. Computed Investment Indicators
+> Derived from YF_FS / YFINANCE data via `compute_financial_indicators`.
+{indicator_md}
 
 ---
 

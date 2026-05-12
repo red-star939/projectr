@@ -29,6 +29,8 @@ YF_FS_ACCOUNT_MAP: dict[str, str] = {
     "Net Income Continuous Operations":         "당기순이익",
     "Net Income Including Noncontrolling Interests": "당기순이익",
     "Gross Profit":                             "매출총이익",
+    "Cost Of Revenue":                          "매출원가",
+    "Reconciled Cost Of Revenue":               "매출원가",
     # 재무상태표 (BS)
     "Total Assets":                             "자산총계",
     "Total Liabilities Net Minority Interest":  "부채총계",
@@ -38,10 +40,22 @@ YF_FS_ACCOUNT_MAP: dict[str, str] = {
     "Total Equity Gross Minority Interest":     "자본총계",
     "Current Assets":                           "유동자산",
     "Current Liabilities":                      "유동부채",
-    # 현금흐름표 (CF) — 현재 compute_financial_indicators 에서는 직접 미사용이나 저장해 둠
+    # 운전자본 항목 (Phase 1: GP/A, 재고회전율, DSO, CCC 등에 사용)
+    "Inventory":                                "재고자산",
+    "Net Receivables":                          "매출채권",
+    "Accounts Receivable":                      "매출채권",
+    "Receivables":                              "매출채권",
+    "Accounts Payable":                         "매입채무",
+    "Payables":                                 "매입채무",
+    # 현금흐름표 (CF)
     "Operating Cash Flow":                      "영업활동현금흐름",
     "Free Cash Flow":                           "잉여현금흐름",
     "Capital Expenditure":                      "자본적지출",
+    "Reconciled Depreciation":                  "감가상각비",
+    "Depreciation And Amortization":            "감가상각비",
+    "Depreciation Amortization Depletion":      "감가상각비",
+    "Repurchase Of Capital Stock":              "자사주매입",
+    "Common Stock Repurchase":                  "자사주매입",
 }
 
 
