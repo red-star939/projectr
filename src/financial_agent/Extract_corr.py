@@ -66,7 +66,16 @@ def get_5y_close_history(company):
             
         stock_code = utils_.call_stock_code(company)
         if stock_code is None:
-            print(f"⚠️ [{company}] 종목 코드가 존재하지 않습니다.")
+            # 국내 코드북에 없는 경우 — 해외 티커로 직접 시도 (예: "AAPL", "7203.T")
+            try:
+                ticker = yf.Ticker(company)
+                hist = ticker.history(period="5y")
+                if hist is not None and not hist.empty and 'Close' in hist.columns:
+                    close = hist['Close'].dropna()
+                    close.index = close.index.normalize()
+                    return close
+            except Exception as e:
+                print(f"⚠️ [{company}] yfinance 직접 조회 실패: {e}")
             return pd.Series()
             
         raw_code = str(stock_code).zfill(6)
@@ -276,6 +285,68 @@ def compare_with_sector(corp, n=5, mode="pearson"):
 
 
 # ============================================================
+# 해외 종목 벤치마크 상관계수 (correlation_with_KOSPI 의 일반화)
+# ============================================================
+
+def correlation_with_benchmark(
+    corp_or_ticker: str,
+    benchmark_ticker: str,
+    mode: str = "pearson",
+) -> float | None:
+    """
+    특정 종목과 지정된 벤치마크 지수 간 5년 일일 수익률 상관계수를 계산한다.
+
+    correlation_with_KOSPI 의 일반화 버전으로,
+    국내·해외 종목 모두에 사용할 수 있다.
+
+    Parameters
+    ----------
+    corp_or_ticker : str
+        한국 기업명("삼성전자") 또는 해외 티커("AAPL", "7203.T")
+    benchmark_ticker : str
+        yfinance 지수 티커 (예: "^GSPC", "^N225").
+        market_index_map.get_benchmark_index() 로 구하거나 직접 지정.
+    mode : str
+        상관계수 방식 ("pearson" | "spearman" | "kendall" | "distance")
+
+    Notes
+    -----
+    - yfinance_api.fetch_and_save_yfinance_info 는 호출하지 않는다.
+      호출자(app_1FS.py)가 이미 저장했다고 가정한다.
+    - 주가 히스토리는 DB 에 저장하지 않고 계산에만 사용한다.
+    """
+    print(f"🔄 [{corp_or_ticker}] vs [{benchmark_ticker}] 5년 수익률 상관계수 계산 중...")
+
+    try:
+        corp_close      = get_5y_close_history(corp_or_ticker)
+        benchmark_close = get_5y_close_history(benchmark_ticker)
+
+        if corp_close.empty or benchmark_close.empty:
+            print(f"🚨 [{corp_or_ticker}] 또는 [{benchmark_ticker}] 주가 데이터를 찾을 수 없습니다.")
+            return None
+
+        df_merged = pd.DataFrame(
+            {"corp": corp_close, "bench": benchmark_close}
+        ).dropna()
+
+        if df_merged.empty:
+            print("🚨 데이터 병합 후 유효한 기간이 없습니다.")
+            return None
+
+        df_merged["corp_return"]  = df_merged["corp"].pct_change()  * 100
+        df_merged["bench_return"] = df_merged["bench"].pct_change() * 100
+        df_merged = df_merged.dropna()
+
+        corr = calculate_correlation(df_merged["corp_return"], df_merged["bench_return"], mode)
+        print(f"✅ [{corp_or_ticker}] - [{benchmark_ticker}] 상관계수({mode}): {corr:.4f}")
+        return corr
+
+    except Exception as e:
+        print(f"🚨 [{corp_or_ticker}] 벤치마크 상관계수 계산 중 에러: {e}")
+        return None
+
+
+# ============================================================
 # 투자 지표 계산 및 DB 저장
 # ============================================================
 
@@ -293,30 +364,39 @@ def _get_yf_value(df: pd.DataFrame, account_nm: str):
 
 def _get_dart_value(df: pd.DataFrame, *account_names: str):
     """
-    DB DataFrame에서 DART 항목 최신값을 반환.
+    DB DataFrame에서 DART 또는 YF_FS 항목 최신값을 반환.
     account_names 순서대로 시도하여 첫 번째로 발견된 값을 쓴다.
-    연결재무제표(CFS) 우선, 없으면 개별(OFS), 그것도 없으면 fs_div 무관 최신값.
+    DART CFS → DART OFS → DART 무관 → YF_FS 순으로 우선순위 적용.
     Returns: (float value, int year) 또는 (None, None)
     """
     for acct in account_names:
-        mask = (df['source'] == 'DART') & (df['account_nm'] == acct)
-        sub = df[mask]
-        if sub.empty:
-            continue
-        for fs_type in ['CFS', 'OFS']:
-            t = sub[sub['fs_div'] == fs_type]
-            if not t.empty:
-                row = t.sort_values('target_year', ascending=False).iloc[0]
-                try:
-                    return float(row['amount']), int(row['target_year'])
-                except (ValueError, TypeError):
-                    pass
-        # fs_div 무관 최신값 fallback
-        row = sub.sort_values('target_year', ascending=False).iloc[0]
-        try:
-            return float(row['amount']), int(row['target_year'])
-        except (ValueError, TypeError):
-            pass
+        # DART (한국) 우선 검색
+        dart_sub = df[(df['source'] == 'DART') & (df['account_nm'] == acct)]
+        if not dart_sub.empty:
+            for fs_type in ['CFS', 'OFS']:
+                t = dart_sub[dart_sub['fs_div'] == fs_type]
+                if not t.empty:
+                    row = t.sort_values('target_year', ascending=False).iloc[0]
+                    try:
+                        return float(row['amount']), int(row['target_year'])
+                    except (ValueError, TypeError):
+                        pass
+            # fs_div 무관 최신값 fallback
+            row = dart_sub.sort_values('target_year', ascending=False).iloc[0]
+            try:
+                return float(row['amount']), int(row['target_year'])
+            except (ValueError, TypeError):
+                pass
+
+        # YF_FS (해외 종목) fallback — YF_FS_ACCOUNT_MAP으로 정규화된 한국어 계정명 검색
+        yf_fs_sub = df[(df['source'] == 'YF_FS') & (df['account_nm'] == acct)]
+        if not yf_fs_sub.empty:
+            row = yf_fs_sub.sort_values('target_year', ascending=False).iloc[0]
+            try:
+                return float(row['amount']), int(row['target_year'])
+            except (ValueError, TypeError):
+                pass
+
     return None, None
 
 
@@ -348,8 +428,9 @@ def compute_financial_indicators(corp: str) -> list:
         print(f"🚨 [{corp}] DB에 데이터가 없습니다. Financial Agent를 먼저 실행해주세요.")
         return []
 
-    c_code = str(utils_.call_corp_code(corp))
-    s_code = str(utils_.call_stock_code(corp))
+    # 해외 종목은 DART 코드북에 없으므로 corp 티커 자체를 코드로 사용
+    c_code = str(utils_.call_corp_code(corp) or corp)
+    s_code = str(utils_.call_stock_code(corp) or corp)
     curr_year = datetime.datetime.now().year
     records = []
 
@@ -389,13 +470,17 @@ def compute_financial_indicators(corp: str) -> list:
     _add('PER', _get_yf_value(df, 'forwardPE'),
          'YFINANCE', 'VAL', 'x')
 
-    # PBR: 주가(yfinance) / BPS(DART 자본총계 ÷ yfinance 발행주식수)
-    #      yfinance는 한국 종목에 priceToBook을 제공하지 않으므로 직접 계산
+    # PBR: 주가 / BPS(자본총계 ÷ 발행주식수) — DART/YF_FS 자본총계 우선
+    #      fallback: yfinance priceToBook (해외 종목 등)
     price  = _get_yf_value(df, 'regularMarketPrice')
     shares = _get_yf_value(df, 'sharesOutstanding')
     if price and shares and equity_val and shares > 0 and equity_val > 0:
         bps = equity_val / shares
         _add('PBR', price / bps, 'MIXED', 'VAL', 'x', eq_year)
+    else:
+        ptb = _get_yf_value(df, 'priceToBook')
+        if ptb is not None:
+            _add('PBR', ptb, 'YFINANCE', 'VAL', 'x')
 
     # PSR: yfinance priceToSalesTrailing12Months
     _add('PSR', _get_yf_value(df, 'priceToSalesTrailing12Months'),
@@ -440,10 +525,14 @@ def compute_financial_indicators(corp: str) -> list:
 
     # ── 3. 재무 안정성 (Stability) ───────────────────────────────────
 
-    # 부채비율 (한국 회계 기준): DART 부채총계 / 자본총계 × 100
+    # 부채비율: DART/YF_FS 부채총계 / 자본총계 × 100  (fallback: yfinance debtToEquity)
     if liab_val is not None and equity_val and equity_val != 0:
         _add('부채비율', (liab_val / equity_val) * 100,
              'DART', 'STAB', '%', lb_year)
+    else:
+        dte = _get_yf_value(df, 'debtToEquity')
+        if dte is not None:
+            _add('부채비율', dte, 'YFINANCE', 'STAB', '%')
 
     # 유동비율: DART 유동자산 / 유동부채 × 100  (fallback: yfinance currentRatio × 100)
     if cur_assets is not None and cur_liab and cur_liab != 0:
