@@ -1,10 +1,12 @@
 import os
 import sys
 
-# 현재 파일(_test_pipeline.py)이 위치한 폴더의 상위->상위(즉, 프로젝트 루트)를 시스템 경로에 추가
-# 이렇게 하면 실행 위치에 상관없이 패키지를 깔끔하게 불러올 수 있습니다.
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.append(project_root)
+# 이 파일은 프로젝트 루트에 있으므로, 자기 자신의 디렉터리를 sys.path에 추가하면 된다.
+# (이전 코드는 _test_pipeline.py에서 복사하면서 dirname을 3번 호출, 프로젝트 루트보다
+#  2단계 위 디렉터리를 sys.path에 넣어 패키지 import가 깨질 수 있었다.)
+project_root = os.path.dirname(os.path.abspath(__file__))
+if project_root not in sys.path:
+    sys.path.append(project_root)
 
 from src.financial_agent import DART_API
 from src.financial_agent import FS_to_SQL

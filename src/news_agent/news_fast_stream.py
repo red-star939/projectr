@@ -72,7 +72,7 @@ class BatFastStreamer:
                 now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 md_content = f"# {doc.title()}\n\n- 수집: {now_str}\n- URL: {url}\n\n---\n\n{raw_content}"
                 doc_id = hashlib.md5(url.encode()).hexdigest()
-                
+
                 with self.lock:
                     collection.upsert(
                         ids=[doc_id],
@@ -80,8 +80,11 @@ class BatFastStreamer:
                         metadatas=[{"title": doc.title(), "url": url}]
                     )
                 return f"✅ 수집완료: {doc.title()[:15]}..."
-        except: return "❌ 실패"
-        finally: driver.quit()
+        except Exception as e:
+            # bare except는 KeyboardInterrupt/SystemExit까지 삼키므로 Exception으로 한정
+            return f"❌ 실패: {e}"
+        finally:
+            driver.quit()
 
     def run(self, keyword):
         # RSS 검색
@@ -90,7 +93,9 @@ class BatFastStreamer:
         feed = feedparser.parse(rss_url)
         links = [e.link for e in feed.entries[:self.limit]]
 
-        if not links: return print("[!] 최근 1시간 이내 뉴스가 없습니다.")
+        if not links:
+            print("[!] 최근 1시간 이내 뉴스가 없습니다.")
+            return []
 
         # 모델 준비 대기
         if not self.model_ready:
@@ -98,8 +103,11 @@ class BatFastStreamer:
 
         # 컬렉션 초기화 (Fresh Sync)
         col_name = self._sanitize_name(keyword)
-        try: self.client.delete_collection(col_name)
-        except: pass
+        try:
+            self.client.delete_collection(col_name)
+        except Exception:
+            # 컬렉션이 존재하지 않거나 ChromaDB 내부 에러는 무시하고 진행
+            pass
         collection = self.client.create_collection(name=col_name, embedding_function=self.embedding_fn)
 
         print(f"[*] 병렬 수집 가동: {len(links)}개 타겟 분석...")

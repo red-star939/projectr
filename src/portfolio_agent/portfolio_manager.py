@@ -40,8 +40,8 @@ class BatPortfolioAgent:
             ns_res = ns_col.get(ids=[f"SUMMARY_{target_corp}"])
             ns_doc = ns_res['documents'][0] if ns_res['documents'] else "뉴스 요약 데이터 부재"
             status["ns"] = True if ns_res['documents'] else False
-        except:
-            ns_doc = "NS_DB 접근 오류"
+        except Exception as e:
+            ns_doc = f"NS_DB 접근 오류: {e}"
 
         # 2. FS_DB(재무 지능) 인출
         try:
@@ -49,8 +49,8 @@ class BatPortfolioAgent:
             fs_res = fs_col.get(ids=[f"REPORT_{target_corp}"])
             fs_doc = fs_res['documents'][0] if fs_res['documents'] else "재무 리포트 부재"
             status["fs"] = True if fs_res['documents'] else False
-        except:
-            fs_doc = "FS_DB 접근 오류"
+        except Exception as e:
+            fs_doc = f"FS_DB 접근 오류: {e}"
 
         return {"ns_report": ns_doc, "fs_report": fs_doc, "status": status}
 
