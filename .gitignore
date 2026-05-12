@@ -2,6 +2,7 @@ venv/
 venv1/
 __pycache__/
 data/Financial_Statement/
+data/Financial_Statement_all/
 data/News_Reports/
 model/
 src/news_agent/old/

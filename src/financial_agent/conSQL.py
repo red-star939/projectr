@@ -2,6 +2,7 @@ import sqlite3
 import json
 import pandas as pd
 import os
+import datetime
 
 class FS():
     def __init__(self, init_sectors=True):
@@ -11,15 +12,83 @@ class FS():
         '''
         db_name = "data/FS.db"
         self.db_name = db_name
-        
+
         # 폴더 생성 로직
         os.makedirs(os.path.dirname(db_name), exist_ok=True)
         self.conn = sqlite3.connect(db_name)
-        
+
         # 마스터 테이블 자동 생성 및 초기화 체크
         if init_sectors:
             self._init_sector_table()
+
+        # 데이터 수집 시각 추적 테이블
+        self._init_collection_log_table()
         
+    def _init_collection_log_table(self):
+        """
+        COLLECTION_LOG: 회사·소스별 마지막 API 수집 시각을 추적한다.
+            (corp_name, source) 가 PRIMARY KEY → 동일 조합은 항상 1행.
+            log_collection() 호출 시 last_collected_at 갱신 (UPSERT).
+        """
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS COLLECTION_LOG (
+                    corp_name         TEXT,
+                    source            TEXT,
+                    last_collected_at TIMESTAMP,
+                    PRIMARY KEY (corp_name, source)
+                )
+            """)
+            self.conn.commit()
+        except sqlite3.Error as e:
+            print(f"COLLECTION_LOG 테이블 생성 중 오류 발생: {e}")
+
+    def log_collection(self, corp_name, source):
+        """
+        회사·소스 조합의 마지막 수집 시각을 현재 시각으로 업서트한다.
+
+        :param corp_name: 회사명 또는 티커
+        :param source:    'DART' | 'DART_ALL' | 'YFINANCE' | 'YF_FS' 등
+        """
+        try:
+            now = datetime.datetime.now().isoformat(timespec='seconds')
+            cursor = self.conn.cursor()
+            cursor.execute(
+                "INSERT OR REPLACE INTO COLLECTION_LOG (corp_name, source, last_collected_at) "
+                "VALUES (?, ?, ?)",
+                (corp_name, source, now),
+            )
+            self.conn.commit()
+            return now
+        except sqlite3.Error as e:
+            print(f"COLLECTION_LOG 갱신 중 오류 발생: {e}")
+            return None
+
+    def get_collection_log(self, corp_name=None, source=None):
+        """
+        수집 이력 조회. corp_name / source 둘 다 None이면 전체 조회.
+
+        :return: pd.DataFrame
+        """
+        try:
+            query = "SELECT corp_name, source, last_collected_at FROM COLLECTION_LOG"
+            conds, params = [], []
+            if corp_name:
+                conds.append("corp_name = ?")
+                params.append(corp_name)
+            if source:
+                conds.append("source = ?")
+                params.append(source)
+            if conds:
+                query += " WHERE " + " AND ".join(conds)
+            query += " ORDER BY last_collected_at DESC"
+
+            return pd.read_sql_query(query, self.conn, params=params)
+        except Exception as e:
+            print(f"COLLECTION_LOG 조회 중 오류: {e}")
+            return pd.DataFrame()
+
     def _init_sector_table(self):
         """
         FS.db 내부에 상위 계층 역할을 할 'SECTORS' 마스터 메타데이터 테이블을 생성합니다.
