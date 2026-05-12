@@ -1,4 +1,5 @@
 import sys
+import datetime
 
 # Windows 콘솔 환경에서 이모지 출력 시 발생하는 cp949 인코딩 에러 방지
 if hasattr(sys.stdout, 'reconfigure'):
@@ -274,3 +275,225 @@ def compare_with_sector(corp, n=5, mode="pearson"):
     return results
 
 
+# ============================================================
+# 투자 지표 계산 및 DB 저장
+# ============================================================
+
+def _get_yf_value(df: pd.DataFrame, account_nm: str):
+    """DB DataFrame에서 YFINANCE 항목 최신값을 float으로 반환. 없으면 None."""
+    mask = (df['source'] == 'YFINANCE') & (df['account_nm'] == account_nm)
+    sub = df[mask]
+    if sub.empty:
+        return None
+    try:
+        return float(sub.sort_values('target_year', ascending=False).iloc[0]['amount'])
+    except (ValueError, TypeError):
+        return None
+
+
+def _get_dart_value(df: pd.DataFrame, *account_names: str):
+    """
+    DB DataFrame에서 DART 항목 최신값을 반환.
+    account_names 순서대로 시도하여 첫 번째로 발견된 값을 쓴다.
+    연결재무제표(CFS) 우선, 없으면 개별(OFS), 그것도 없으면 fs_div 무관 최신값.
+    Returns: (float value, int year) 또는 (None, None)
+    """
+    for acct in account_names:
+        mask = (df['source'] == 'DART') & (df['account_nm'] == acct)
+        sub = df[mask]
+        if sub.empty:
+            continue
+        for fs_type in ['CFS', 'OFS']:
+            t = sub[sub['fs_div'] == fs_type]
+            if not t.empty:
+                row = t.sort_values('target_year', ascending=False).iloc[0]
+                try:
+                    return float(row['amount']), int(row['target_year'])
+                except (ValueError, TypeError):
+                    pass
+        # fs_div 무관 최신값 fallback
+        row = sub.sort_values('target_year', ascending=False).iloc[0]
+        try:
+            return float(row['amount']), int(row['target_year'])
+        except (ValueError, TypeError):
+            pass
+    return None, None
+
+
+def compute_financial_indicators(corp: str) -> list:
+    """
+    DB에 저장된 DART 및 YFINANCE 데이터만으로 주요 투자 지표 13개를 계산하고
+    FS.db에 source='INDICATOR'로 저장합니다. 추가 외부 API 호출 없음.
+
+    사전 조건:
+        FS_to_SQL.ensure_company_data(corp)와
+        yfinance_api.fetch_and_save_yfinance_info([corp])가
+        먼저 실행되어 DB에 데이터가 적재되어 있어야 합니다.
+
+    저장 구조:
+        source      = 'INDICATOR'
+        fs_div      = 분류 (VAL/PROF/STAB/CF/DIV)
+        sj_div      = 단위 (x=배수, %=퍼센트)
+        report_type = 계산 출처 (DART/YFINANCE/MIXED)
+        account_nm  = 지표명 (PER, PBR, ROE 등)
+
+    Returns:
+        저장된 레코드 딕셔너리 리스트
+    """
+    db = conSQL.FS()
+    df = db.search_sql(corp)
+    db.close()
+
+    if df is None or df.empty:
+        print(f"🚨 [{corp}] DB에 데이터가 없습니다. Financial Agent를 먼저 실행해주세요.")
+        return []
+
+    c_code = str(utils_.call_corp_code(corp))
+    s_code = str(utils_.call_stock_code(corp))
+    curr_year = datetime.datetime.now().year
+    records = []
+
+    def _add(account_nm, amount, report_type, fs_div, sj_div, year=None):
+        """유효한 값만 records에 추가하는 내부 헬퍼."""
+        if amount is None:
+            return
+        try:
+            v = float(amount)
+        except (ValueError, TypeError):
+            return
+        records.append({
+            'source':      'INDICATOR',
+            'report_type': report_type,
+            'corp_code':   c_code,
+            'stock_code':  s_code,
+            'fs_div':      fs_div,
+            'sj_div':      sj_div,
+            'account_nm':  account_nm,
+            'target_year': year if year is not None else curr_year,
+            'amount':      round(v, 6),
+        })
+
+    # ── 공통으로 쓰이는 DART 값을 미리 추출 ─────────────────────────
+    net_income, ni_year   = _get_dart_value(df, '당기순이익', '당기순이익(손실)')
+    equity_val, eq_year   = _get_dart_value(df, '자본총계', '자본합계')
+    assets_val, as_year   = _get_dart_value(df, '자산총계')
+    liab_val,   lb_year   = _get_dart_value(df, '부채총계')
+    cur_assets, ca_year   = _get_dart_value(df, '유동자산')
+    cur_liab,   cl_year   = _get_dart_value(df, '유동부채')
+    op_income,  op_year   = _get_dart_value(df, '영업이익')
+    revenue,    rev_year  = _get_dart_value(df, '매출액')
+
+    # ── 1. 밸류에이션 (Valuation) ────────────────────────────────────
+
+    # PER: yfinance forwardPE (이미 DB에 있는 값 그대로 사용)
+    _add('PER', _get_yf_value(df, 'forwardPE'),
+         'YFINANCE', 'VAL', 'x')
+
+    # PBR: 주가(yfinance) / BPS(DART 자본총계 ÷ yfinance 발행주식수)
+    #      yfinance는 한국 종목에 priceToBook을 제공하지 않으므로 직접 계산
+    price  = _get_yf_value(df, 'regularMarketPrice')
+    shares = _get_yf_value(df, 'sharesOutstanding')
+    if price and shares and equity_val and shares > 0 and equity_val > 0:
+        bps = equity_val / shares
+        _add('PBR', price / bps, 'MIXED', 'VAL', 'x', eq_year)
+
+    # PSR: yfinance priceToSalesTrailing12Months
+    _add('PSR', _get_yf_value(df, 'priceToSalesTrailing12Months'),
+         'YFINANCE', 'VAL', 'x')
+
+    # PEG: yfinance pegRatio
+    _add('PEG', _get_yf_value(df, 'pegRatio'),
+         'YFINANCE', 'VAL', 'x')
+
+    # EV/EBITDA: yfinance enterpriseToEbitda
+    _add('EV/EBITDA', _get_yf_value(df, 'enterpriseToEbitda'),
+         'YFINANCE', 'VAL', 'x')
+
+    # ── 2. 수익성 (Profitability) ────────────────────────────────────
+
+    # ROE: DART 당기순이익 / 자본총계 × 100  (fallback: yfinance returnOnEquity)
+    if net_income is not None and equity_val and equity_val != 0:
+        _add('ROE', (net_income / equity_val) * 100,
+             'DART', 'PROF', '%', ni_year)
+    else:
+        v = _get_yf_value(df, 'returnOnEquity')
+        if v is not None:
+            _add('ROE', v * 100, 'YFINANCE', 'PROF', '%')
+
+    # ROA: DART 당기순이익 / 자산총계 × 100  (fallback: yfinance returnOnAssets)
+    if net_income is not None and assets_val and assets_val != 0:
+        _add('ROA', (net_income / assets_val) * 100,
+             'DART', 'PROF', '%', ni_year)
+    else:
+        v = _get_yf_value(df, 'returnOnAssets')
+        if v is not None:
+            _add('ROA', v * 100, 'YFINANCE', 'PROF', '%')
+
+    # 영업이익률: DART 영업이익 / 매출액 × 100  (fallback: yfinance operatingMargins)
+    if op_income is not None and revenue and revenue != 0:
+        _add('영업이익률', (op_income / revenue) * 100,
+             'DART', 'PROF', '%', op_year)
+    else:
+        v = _get_yf_value(df, 'operatingMargins')
+        if v is not None:
+            _add('영업이익률', v * 100, 'YFINANCE', 'PROF', '%')
+
+    # ── 3. 재무 안정성 (Stability) ───────────────────────────────────
+
+    # 부채비율 (한국 회계 기준): DART 부채총계 / 자본총계 × 100
+    if liab_val is not None and equity_val and equity_val != 0:
+        _add('부채비율', (liab_val / equity_val) * 100,
+             'DART', 'STAB', '%', lb_year)
+
+    # 유동비율: DART 유동자산 / 유동부채 × 100  (fallback: yfinance currentRatio × 100)
+    if cur_assets is not None and cur_liab and cur_liab != 0:
+        _add('유동비율', (cur_assets / cur_liab) * 100,
+             'DART', 'STAB', '%', ca_year)
+    else:
+        v = _get_yf_value(df, 'currentRatio')
+        if v is not None:
+            _add('유동비율', v * 100, 'YFINANCE', 'STAB', '%')
+
+    # ── 4. 현금흐름 (Cash Flow) ──────────────────────────────────────
+
+    # 영업CF품질비율: 영업현금흐름 / 순이익
+    #   1에 가까울수록 이익의 질이 좋음 (영업CF ≈ 순이익)
+    op_cf      = _get_yf_value(df, 'operatingCashflow')
+    net_inc_yf = _get_yf_value(df, 'netIncomeToCommon')
+    if op_cf is not None and net_inc_yf and net_inc_yf != 0:
+        _add('영업CF품질비율', op_cf / net_inc_yf,
+             'YFINANCE', 'CF', 'x')
+
+    # ── 5. 배당 (Dividend) ───────────────────────────────────────────
+
+    # 배당수익률: yfinance dividendYield (소수점 → % 변환)
+    div_yield = _get_yf_value(df, 'dividendYield')
+    if div_yield is not None:
+        _add('배당수익률', div_yield * 100, 'YFINANCE', 'DIV', '%')
+
+    # 배당성향: yfinance payoutRatio (소수점 → % 변환)
+    payout = _get_yf_value(df, 'payoutRatio')
+    if payout is not None:
+        _add('배당성향', payout * 100, 'YFINANCE', 'DIV', '%')
+
+    # ── DB 저장 ──────────────────────────────────────────────────────
+    if not records:
+        print(f"⚠️ [{corp}] 계산된 지표가 없습니다. DART/YFINANCE 데이터가 DB에 있는지 확인해주세요.")
+        return []
+
+    ind_df = pd.DataFrame(records)
+    db = conSQL.FS()
+    # (source, corp_code, fs_div, account_nm, target_year) 조합이 동일하면 최신값으로 갱신
+    subset = ['source', 'corp_code', 'fs_div', 'account_nm', 'target_year']
+    db.to_sql(corp, ind_df, subset=subset)
+    db.close()
+
+    print(f"✅ [{corp}] {len(records)}개 투자 지표 계산 및 DB 저장 완료")
+    for r in records:
+        unit = r['sj_div']
+        val  = r['amount']
+        disp = f"{val:.2f}{unit}" if unit == '%' else f"{val:.4f}x"
+        src  = r['report_type']
+        print(f"   [{r['fs_div']}] {r['account_nm']:12s} = {disp:>12s}  ({src})")
+
+    return records

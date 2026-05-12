@@ -40,10 +40,42 @@ def main():
             
             # 2. 데이터 분석 및 리포트 생성
             db = conSQL.FS()
-            df = db.search_sql(target_corp)
             sector_nm = Sector.get_sector(target_corp)
             c_code = utils_.call_corp_code(target_corp)
             s_code = utils_.call_stock_code(target_corp)
+
+            # --- [추가] 상관관계 분석 및 DB 저장 ---
+            st.write("시장 및 섹터 상관관계 분석 중...")
+            kospi_corr = Extract_corr.correlation_with_KOSPI(target_corp)
+            sector_corrs = Extract_corr.compare_with_sector(target_corp)
+            
+            corr_records = []
+            curr_year = datetime.now().year
+            if kospi_corr is not None:
+                corr_records.append({
+                    'source': 'CORRELATION', 'report_type': '5Y', 'corp_code': c_code, 'stock_code': s_code,
+                    'fs_div': 'N/A', 'sj_div': 'N/A', 'account_nm': 'KOSPI', 'target_year': curr_year, 'amount': kospi_corr
+                })
+            
+            if sector_corrs:
+                for comp, corr in sector_corrs:
+                    if corr is not None:
+                        corr_records.append({
+                            'source': 'CORRELATION', 'report_type': '5Y', 'corp_code': c_code, 'stock_code': s_code,
+                            'fs_div': 'N/A', 'sj_div': 'N/A', 'account_nm': comp, 'target_year': curr_year, 'amount': corr
+                        })
+            
+            if corr_records:
+                corr_df = pd.DataFrame(corr_records)
+                db.to_sql(target_corp, corr_df)
+            # ------------------------------------
+
+            # --- 투자 지표 계산 및 DB 저장 (추가 API 호출 없이 DB만 활용) ---
+            st.write("투자 지표(PER·PBR·ROE 등) 계산 중...")
+            Extract_corr.compute_financial_indicators(target_corp)
+            # ---------------------------------------------------------------
+
+            df = db.search_sql(target_corp)
             
             report_md = fs_report_test.create_markdown_template(
                 corp=target_corp, sector=sector_nm, corp_code=c_code, stock_code=s_code, df=df
@@ -60,6 +92,31 @@ def main():
         # 결과 시각화 섹션 (기존 로직 유지)
         if df is not None and not df.empty:
             st.markdown(report_md)
+            
+            # --- [추가] 상관관계 시각화 섹션 ---
+            if 'source' in df.columns:
+                corr_data = df[df['source'] == 'CORRELATION'].copy()
+                if not corr_data.empty:
+                    st.divider()
+                    st.subheader("📊 주가 상관관계 분석 (최근 5년)")
+                    st.caption("KOSPI 지수 및 동종 섹터 경쟁사와의 주가 수익률 상관계수입니다.")
+                    
+                    corr_data['amount'] = pd.to_numeric(corr_data['amount'], errors='coerce')
+                    corr_data = corr_data.dropna(subset=['amount']).sort_values(by='amount', ascending=False)
+                    
+                    if not corr_data.empty:
+                        kospi_data = corr_data[corr_data['account_nm'] == 'KOSPI']
+                        if not kospi_data.empty:
+                            k_val = kospi_data['amount'].values[0]
+                            st.metric("📈 KOSPI 대비 상관계수", f"{k_val:.3f}", help="1에 가까울수록 KOSPI 지수와 유사하게 움직입니다.")
+                        
+                        sector_data = corr_data[corr_data['account_nm'] != 'KOSPI']
+                        if not sector_data.empty:
+                            st.write("**섹터 내 주요 경쟁사 상관계수**")
+                            chart_df = sector_data[['account_nm', 'amount']].set_index('account_nm')
+                            st.bar_chart(chart_df, use_container_width=True)
+            # --------------------------------
+            
             if save_success:
                 st.toast(f"💾 {target_corp} 지식 베이스 최신화 완료")
         else:
