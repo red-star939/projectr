@@ -12,6 +12,7 @@ if str(BASE_DIR) not in sys.path:
 
 # 핵심 금융 모듈 로드
 from src.financial_agent import utils_, conSQL, FS_to_SQL, yfinance_api, Sector, Extract_corr, fs_report_test, chroma_manager
+from src.financial_agent import company_resolver
 
 # 해외 종목 모듈 로드
 from src.international_agent import intl_utils
@@ -35,20 +36,52 @@ def main():
     is_intl = market_mode == "🌍 해외 기업 (Ticker)"
 
     if not is_intl:
-        all_corps = list(utils_.corp_code.keys())
-        target_corp = st.sidebar.selectbox(
-            "분석 대상 기업",
-            all_corps,
-            index=all_corps.index("삼성전자") if "삼성전자" in all_corps else 0,
-            key="fs_target_select",
+        # 보조 text_input — 회사명/별칭/KRX 6자리 종목코드 모두 허용
+        free_input = st.sidebar.text_input(
+            "회사명 또는 종목코드 (예: 삼성전자, 005930, 현대차)",
+            value="",
+            key="fs_kr_free_input",
+            help="비워두면 아래 dropdown 으로 선택합니다.",
         )
+        all_corps = list(utils_.corp_code.keys())
+
+        target_corp = None
+        resolver_msg = None
+        if free_input.strip():
+            result = company_resolver.resolve_korean(free_input)
+            if result:
+                target_corp = result.canonical
+                resolver_msg = f"✅ '{free_input}' → **{result.canonical}** ({result.source})"
+            else:
+                resolver_msg = f"⚠️ '{free_input}' 를 인식하지 못했습니다. dropdown 으로 선택해주세요."
+
+        if resolver_msg:
+            st.sidebar.caption(resolver_msg)
+
+        if target_corp is None:
+            target_corp = st.sidebar.selectbox(
+                "분석 대상 기업 (dropdown)",
+                all_corps,
+                index=all_corps.index("삼성전자") if "삼성전자" in all_corps else 0,
+                key="fs_target_select",
+            )
     else:
         raw_input = st.sidebar.text_input(
-            "티커 입력 (예: AAPL, MSFT, 7203.T)",
+            "회사명 또는 티커 (예: Apple, AAPL, 인텔, 7203.T)",
             value="AAPL",
             key="fs_ticker_input",
         )
-        target_corp = raw_input.strip().upper()
+        result = company_resolver.resolve_international(raw_input)
+        if result:
+            target_corp = result.canonical
+            if result.source == 'alias':
+                st.sidebar.caption(f"✅ '{raw_input.strip()}' → **{result.canonical}**")
+        else:
+            target_corp = raw_input.strip().upper()
+            if target_corp:
+                st.sidebar.caption(
+                    f"⚠️ '{raw_input.strip()}' 형식이 일반적인 티커 형태와 다릅니다. 그대로 시도합니다."
+                )
 
     analyze_btn = st.sidebar.button("정밀 분석 및 DB 저장 시작", use_container_width=True)
 
