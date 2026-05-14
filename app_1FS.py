@@ -68,11 +68,28 @@ def main():
                 with st.status(f"[{target_corp}] 해외 종목 분석 중...", expanded=True) as status:
                     # 1. 재무제표 수집 (YF_FS source)
                     st.write("yfinance 재무제표 수집 중...")
-                    intl_yf.ensure_intl_data(target_corp)
+                    fs_ok = intl_yf.ensure_intl_data(target_corp)
 
                     # 2. 시장 지표 수집 (YFINANCE source)
                     st.write("yfinance 시장 지표 수집 중...")
-                    intl_yf.fetch_and_save_intl_yf_info(target_corp)
+                    info_ok = intl_yf.fetch_and_save_intl_yf_info(target_corp)
+
+                    # 데이터 부재 시 조기 abort (잘못된 티커 등)
+                    if not fs_ok and not info_ok:
+                        status.update(
+                            label=f"❌ {target_corp} — yfinance 에서 데이터를 찾을 수 없습니다",
+                            state="error", expanded=True,
+                        )
+                        st.error(
+                            f"**'{target_corp}'** 티커가 yfinance 에 등록되지 않았거나 "
+                            f"비상장·상장폐지 종목일 수 있습니다.\n\n"
+                            f"올바른 yfinance 티커 형식 예시:\n"
+                            f"- 미국: `AAPL`, `MSFT`, `INTC` (Intel)\n"
+                            f"- 일본: `7203.T`, `6758.T`\n"
+                            f"- 영국: `BARC.L`\n"
+                            f"- 홍콩: `0700.HK`"
+                        )
+                        return  # main() 종료
 
                     # 3. 섹터 동기화 및 조회
                     intl_utils.sync_intl_sector(target_corp)

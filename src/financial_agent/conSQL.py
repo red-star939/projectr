@@ -217,16 +217,31 @@ class FS():
             return False
 
     def search_sql(self, q):
+        """
+        주어진 테이블명(회사·티커)을 조회. 테이블이 없으면 None 반환 (예외 발생 X).
+
+        pandas DatabaseError 는 sqlite3.Error 와 별개 계층이라
+        except 범위를 Exception 으로 확장하고, 추가로 sqlite_master 로 사전 확인한다.
+        """
+        conn = None
         try:
             conn = sqlite3.connect(self.db_name)
+            # 사전 존재 확인 (pandas DatabaseError 발생 자체를 회피)
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (q,),
+            )
+            if cur.fetchone() is None:
+                return None
+
             query = f"SELECT * FROM '{q}'"
-            result_df = pd.read_sql_query(query, conn)
-            return result_df
-        except sqlite3.Error as e:
+            return pd.read_sql_query(query, conn)
+        except Exception as e:
             print(f"SQL 실행 중 에러 발생: {e}")
             return None
         finally:
-            if 'conn' in locals() and conn:
+            if conn:
                 conn.close()
     
     def close(self):
