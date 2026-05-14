@@ -808,30 +808,36 @@ def compute_financial_indicators(corp: str) -> list:
         _add('SGR', sgr_v, 'MIXED', 'GROWTH', '%')
 
     # 매출 CAGR 3Y (5Y는 데이터 있을 때만)
+    #   연도별로 fs_div 알파벳 우선순위 적용 (CFS < IS < OFS) →
+    #     한국: CFS 우선, 해외(YF_FS): IS 우선 으로 자동 선택
+    #   pandas 버전 무관 (groupby.apply 미사용)
     rev_mask = (df['account_nm'] == '매출액') & df['source'].isin(['DART', 'YF_FS'])
     rev_df = df[rev_mask]
     if not rev_df.empty:
-        # 연도별 1행씩만 (DART CFS 우선)
-        def _pick_rev(g):
-            cfs = g[g['fs_div'] == 'CFS']
-            if not cfs.empty:
-                return float(cfs.iloc[0]['amount'])
-            return float(g.iloc[0]['amount'])
-        rev_yearly = rev_df.groupby('target_year').apply(
-            _pick_rev, include_groups=False
-        ).sort_index(ascending=False)
+        rev_sorted = rev_df.sort_values(['target_year', 'fs_div'], ascending=[False, True])
+        rev_unique = rev_sorted.drop_duplicates(subset='target_year', keep='first')
+        try:
+            rev_yearly = (
+                rev_unique
+                .set_index('target_year')['amount']
+                .astype(float)
+                .sort_index(ascending=False)
+            )
+        except (ValueError, TypeError):
+            rev_yearly = None
 
-        if len(rev_yearly) >= 4:
-            r_curr = rev_yearly.iloc[0]
-            r_3y = rev_yearly.iloc[3]
+        if rev_yearly is not None and len(rev_yearly) >= 4:
+            r_curr = float(rev_yearly.iloc[0])
+            r_3y = float(rev_yearly.iloc[3])
             if r_3y > 0 and r_curr > 0:
                 cagr3 = ((r_curr / r_3y) ** (1/3) - 1) * 100
                 _add('매출CAGR_3Y', cagr3, 'DART', 'GROWTH', '%')
 
-        if len(rev_yearly) >= 6:
-            r_5y = rev_yearly.iloc[5]
-            if r_5y > 0 and rev_yearly.iloc[0] > 0:
-                cagr5 = ((rev_yearly.iloc[0] / r_5y) ** (1/5) - 1) * 100
+        if rev_yearly is not None and len(rev_yearly) >= 6:
+            r_5y = float(rev_yearly.iloc[5])
+            r_curr = float(rev_yearly.iloc[0])
+            if r_5y > 0 and r_curr > 0:
+                cagr5 = ((r_curr / r_5y) ** (1/5) - 1) * 100
                 _add('매출CAGR_5Y', cagr5, 'DART', 'GROWTH', '%')
 
     # ── 7. 시장 (Market) ─────────────────────────────────────────────
