@@ -36,27 +36,47 @@ def main():
     is_intl = market_mode == "🌍 해외 기업 (Ticker)"
 
     if not is_intl:
-        # 보조 text_input — 회사명/별칭/KRX 6자리 종목코드 모두 허용
+        # 보조 text_input — 회사명/별칭/KRX 6자리/오타 모두 허용
         free_input = st.sidebar.text_input(
-            "회사명 또는 종목코드 (예: 삼성전자, 005930, 현대차)",
+            "회사명 또는 종목코드 (예: 삼성전자, 005930, 현대차, 삼선전자)",
             value="",
             key="fs_kr_free_input",
-            help="비워두면 아래 dropdown 으로 선택합니다.",
+            help="오타·부분어도 허용 (의미 검색). 비워두면 아래 dropdown 으로 선택.",
         )
         all_corps = list(utils_.corp_code.keys())
-
         target_corp = None
-        resolver_msg = None
-        if free_input.strip():
-            result = company_resolver.resolve_korean(free_input)
-            if result:
-                target_corp = result.canonical
-                resolver_msg = f"✅ '{free_input}' → **{result.canonical}** ({result.source})"
-            else:
-                resolver_msg = f"⚠️ '{free_input}' 를 인식하지 못했습니다. dropdown 으로 선택해주세요."
 
-        if resolver_msg:
-            st.sidebar.caption(resolver_msg)
+        if free_input.strip():
+            best, candidates = company_resolver.resolve_or_search_korean(
+                free_input, max_candidates=5,
+            )
+            # 1) 정확 매칭 (krx_code/exact) → 자동 확정
+            if best and best.source in ('krx_code', 'exact'):
+                target_corp = best.canonical
+                st.sidebar.caption(f"✅ '{free_input}' → **{best.canonical}** ({best.source})")
+            # 2) alias / 의미 검색 후보가 있을 때 → 사용자 선택
+            else:
+                merged: list[company_resolver.ResolveResult] = []
+                if best:
+                    merged.append(best)
+                # 의미 검색 후보 중복 제거 후 추가
+                seen = {r.canonical for r in merged}
+                for c in candidates:
+                    if c.canonical not in seen:
+                        merged.append(c)
+                        seen.add(c.canonical)
+
+                if merged:
+                    labels = [f"{r.label} · {r.source}" for r in merged]
+                    idx = st.sidebar.selectbox(
+                        f"'{free_input}' 의미 검색 결과 (선택)",
+                        options=range(len(labels)),
+                        format_func=lambda i: labels[i],
+                        key="fs_kr_candidates",
+                    )
+                    target_corp = merged[idx].canonical
+                else:
+                    st.sidebar.caption(f"⚠️ '{free_input}' 결과 없음. dropdown 으로 선택하세요.")
 
         if target_corp is None:
             target_corp = st.sidebar.selectbox(
@@ -67,20 +87,46 @@ def main():
             )
     else:
         raw_input = st.sidebar.text_input(
-            "회사명 또는 티커 (예: Apple, AAPL, 인텔, 7203.T)",
+            "회사명 또는 티커 (예: Apple, AAPL, 인텔, Salesforce, 7203.T)",
             value="AAPL",
             key="fs_ticker_input",
         )
-        result = company_resolver.resolve_international(raw_input)
-        if result:
-            target_corp = result.canonical
-            if result.source == 'alias':
-                st.sidebar.caption(f"✅ '{raw_input.strip()}' → **{result.canonical}**")
-        else:
-            target_corp = raw_input.strip().upper()
-            if target_corp:
+        target_corp = None
+        if raw_input.strip():
+            best, candidates = company_resolver.resolve_or_search_international(
+                raw_input, max_candidates=5,
+            )
+            # 1) alias 매칭 → 자동 확정
+            if best and best.source == 'alias':
+                target_corp = best.canonical
+                st.sidebar.caption(f"✅ '{raw_input.strip()}' → **{best.canonical}**")
+            # 2) Yahoo 후보 (+ 약한 ticker_pass 가 있으면 함께) → 사용자 선택
+            elif candidates:
+                merged: list[company_resolver.ResolveResult] = []
+                if best:  # ticker_pass (대문자 그대로)
+                    merged.append(best)
+                seen = {r.canonical for r in merged}
+                for c in candidates:
+                    if c.canonical not in seen:
+                        merged.append(c)
+                        seen.add(c.canonical)
+                labels = [f"{r.label}" if r.source == 'yahoo_search'
+                          else f"{r.canonical} · {r.source}" for r in merged]
+                idx = st.sidebar.selectbox(
+                    f"'{raw_input.strip()}' 검색 결과 (선택)",
+                    options=range(len(labels)),
+                    format_func=lambda i: labels[i],
+                    key="fs_intl_candidates",
+                )
+                target_corp = merged[idx].canonical
+            # 3) 후보 없음 — best 가 있으면 (ticker_pass) 사용, 아니면 raw 그대로
+            elif best:
+                target_corp = best.canonical
+                st.sidebar.caption(f"⚠️ Yahoo 결과 없음 — 입력 '{best.canonical}' 그대로 시도")
+            else:
+                target_corp = raw_input.strip().upper()
                 st.sidebar.caption(
-                    f"⚠️ '{raw_input.strip()}' 형식이 일반적인 티커 형태와 다릅니다. 그대로 시도합니다."
+                    f"⚠️ '{raw_input.strip()}' 매칭 실패. 그대로 시도합니다."
                 )
 
     analyze_btn = st.sidebar.button("정밀 분석 및 DB 저장 시작", use_container_width=True)

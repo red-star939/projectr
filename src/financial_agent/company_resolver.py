@@ -19,7 +19,10 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from functools import lru_cache
+
+import requests
 
 from src.financial_agent import utils_
 
@@ -226,6 +229,13 @@ KOREAN_NAME_ALIASES: dict[str, str] = {
     'sm':              '에스엠',
     '에스엠엔터':          '에스엠',
 
+    # 한글 외래어 → 한국 정식명
+    '네이버':            'NAVER',
+    '카카오뱅크':          '카카오뱅크',
+    '셀트리온':           '셀트리온',
+    '포스코':            'POSCO홀딩스',
+    '포스코홀딩스':         'POSCO홀딩스',
+
     # 영문 → 한국 정식명
     'samsung':          '삼성전자',
     'samsungelectronics':'삼성전자',
@@ -330,11 +340,11 @@ def resolve_international(query: str) -> ResolveResult | None:
 
 
 # ──────────────────────────────────────────────────────────────
-# 통합 resolver (현재 미사용, Phase 5 통합 검색을 위한 placeholder)
+# 통합 resolver (Phase 5 통합 검색용)
 # ──────────────────────────────────────────────────────────────
 def resolve(query: str) -> tuple[ResolveResult | None, str | None]:
     """
-    market 라디오 없는 통합 검색 (Phase 5 용도).
+    market 라디오 없는 통합 검색.
     한국·해외 순으로 시도하여 더 신뢰도 높은 결과 반환.
 
     :return: (result, market) — market 은 'KR' | 'INTL' | None
@@ -345,9 +355,181 @@ def resolve(query: str) -> tuple[ResolveResult | None, str | None]:
     intl = resolve_international(query)
     if intl and intl.source == 'alias':
         return intl, 'INTL'
-    # 둘 다 약한 매칭이면 KR 우선 (한국 DB가 더 풍부)
     if kr:
         return kr, 'KR'
     if intl:
         return intl, 'INTL'
     return None, None
+
+
+# ══════════════════════════════════════════════════════════════
+# Phase 4 — ChromaDB 의미 검색 폴백 (한국)
+# ══════════════════════════════════════════════════════════════
+def search_korean(query: str, max_results: int = 5) -> list[ResolveResult]:
+    """
+    한국 종목 의미 검색 폴백. resolve_korean 정확 매칭 실패 시 사용.
+
+    company_index ChromaDB (KRX 상장사 ~2,500개 임베딩) 에 의미 검색.
+    오타 / 부분어 / 영문 회사명 모두 대응.
+
+    :return: ResolveResult 리스트 (distance 오름차순). 인덱스 미구축 시 빈 리스트
+    """
+    if not query or not str(query).strip():
+        return []
+
+    try:
+        from src.financial_agent import company_index
+    except Exception as e:
+        print(f"⚠️ company_index 모듈 로드 실패: {e}")
+        return []
+
+    hits = company_index.search(query, max_results=max_results)
+    if not hits:
+        return []
+
+    return [
+        ResolveResult(
+            canonical=h['corp_name'],
+            label=h['corp_name'],
+            source=f"embedding(d={h['distance']:.3f})" if h.get('distance') is not None else 'embedding',
+        )
+        for h in hits
+    ]
+
+
+# ══════════════════════════════════════════════════════════════
+# Phase 5 — Yahoo Finance Search 폴백 (해외)
+# ══════════════════════════════════════════════════════════════
+_YAHOO_SEARCH_URL = "https://query1.finance.yahoo.com/v1/finance/search"
+_YAHOO_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+)
+# 주식 외 종목 제외 (옵션·선물·통화·암호화폐 등)
+_VALID_QUOTE_TYPES = {'EQUITY', 'ETF', 'INDEX', 'MUTUALFUND'}
+
+
+@lru_cache(maxsize=256)
+def _yahoo_search_raw(query: str, max_results: int = 10) -> tuple:
+    """
+    Yahoo Finance Search API 호출 (캐시 적용).
+
+    lru_cache 를 위해 tuple 형태로 반환.
+    실패 시 빈 tuple.
+    """
+    if not query:
+        return tuple()
+    try:
+        resp = requests.get(
+            _YAHOO_SEARCH_URL,
+            params={
+                'q': query,
+                'quotesCount': max_results,
+                'newsCount': 0,
+                'lang': 'en-US',
+                'region': 'US',
+            },
+            headers={'User-Agent': _YAHOO_USER_AGENT},
+            timeout=8,
+        )
+    except requests.RequestException as e:
+        print(f"⚠️ Yahoo Search 호출 실패: {e}")
+        return tuple()
+
+    if resp.status_code != 200:
+        print(f"⚠️ Yahoo Search HTTP {resp.status_code}")
+        return tuple()
+
+    try:
+        data = resp.json()
+    except ValueError:
+        return tuple()
+
+    quotes = data.get('quotes', []) or []
+    # 주식형만 필터
+    filtered = [
+        q for q in quotes
+        if q.get('quoteType', '').upper() in _VALID_QUOTE_TYPES
+    ]
+    return tuple(filtered)
+
+
+def search_international(query: str, max_results: int = 5) -> list[ResolveResult]:
+    """
+    해외 종목 의미 검색 폴백. resolve_international 별칭 매칭 실패 시 사용.
+
+    Yahoo Finance Search API 로 글로벌 종목 자동 발견:
+        "Salesforce" → CRM, "Nestle" → NESN.SW, "POSCO" → PKX 등
+
+    :return: ResolveResult 리스트 (relevance 순)
+    """
+    if not query or not str(query).strip():
+        return []
+
+    raw_quotes = _yahoo_search_raw(query.strip(), max_results=max_results * 2)
+    if not raw_quotes:
+        return []
+
+    results: list[ResolveResult] = []
+    for q in raw_quotes[:max_results]:
+        symbol = q.get('symbol', '')
+        if not symbol:
+            continue
+        # 표시 라벨: "AAPL — Apple Inc. (NMS)" 형태
+        long_name = q.get('longname') or q.get('shortname') or symbol
+        exchange = q.get('exchDisp') or q.get('exchange') or ''
+        label = f"{symbol} — {long_name}"
+        if exchange:
+            label += f" ({exchange})"
+        results.append(ResolveResult(
+            canonical=symbol,
+            label=label,
+            source='yahoo_search',
+        ))
+    return results
+
+
+# ══════════════════════════════════════════════════════════════
+# 통합 검색 (resolve + search 조합)
+# ══════════════════════════════════════════════════════════════
+def resolve_or_search_korean(query: str, max_candidates: int = 5
+                              ) -> tuple[ResolveResult | None, list[ResolveResult]]:
+    """
+    한국 종목: resolve (Phase 1-3) → search (Phase 4) 순으로 시도.
+
+    :return: (best_match | None, candidates_list)
+        - best_match: 정확 매칭 (krx_code/exact) 발견 시. 자동 확정용
+        - candidates_list: 의미 검색 결과. UI dropdown 후보로 사용
+                           best_match 가 있어도 추가 후보 포함됨
+    """
+    if not query or not str(query).strip():
+        return None, []
+
+    best = resolve_korean(query)
+    # 정확 매칭 (krx_code / exact) 은 단독 확정 가능
+    if best and best.source in ('krx_code', 'exact'):
+        return best, []
+    # alias 매칭은 신뢰도 중간 — 추가 후보도 함께 제시
+    candidates = search_korean(query, max_results=max_candidates)
+    return best, candidates
+
+
+def resolve_or_search_international(query: str, max_candidates: int = 5
+                                     ) -> tuple[ResolveResult | None, list[ResolveResult]]:
+    """
+    해외 종목: resolve (Phase 1-3) → search (Phase 5 Yahoo) 순으로 시도.
+
+    :return: (best_match | None, candidates_list)
+        - best_match: 별칭 매칭 (alias) 시 자동 확정 후보
+        - candidates_list: Yahoo Search 결과 (best 가 약하면 검증/대안용)
+    """
+    if not query or not str(query).strip():
+        return None, []
+
+    best = resolve_international(query)
+    # alias 는 강한 매칭 — 단독 확정
+    if best and best.source == 'alias':
+        return best, []
+    # ticker_pass 는 약한 매칭 — Yahoo Search 로 검증 + 대안 제시
+    candidates = search_international(query, max_results=max_candidates)
+    return best, candidates
