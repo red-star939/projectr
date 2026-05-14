@@ -115,15 +115,44 @@ def fetch_and_save_intl_financials(corp_ticker: str) -> bool:
         return False
 
 
+def _coerce_to_series(obj):
+    """DataFrame/Series 둘 다 받아들여 항상 Series 로 반환. 변환 불가면 None."""
+    if obj is None:
+        return None
+    if isinstance(obj, pd.Series):
+        return obj
+    if isinstance(obj, pd.DataFrame):
+        if obj.empty:
+            return None
+        return obj.iloc[:, 0]
+    return None
+
+
 def _collect_intl_dividend_history(ticker_obj, ticker: str, n_years: int = 5) -> list:
-    """해외 종목 연간 배당 이력 수집 (yfinance .dividends)."""
+    """해외 종목 연간 배당 이력 수집 (yfinance .dividends).
+
+    yfinance 버전에 따라 Series/DataFrame 으로 다르게 반환될 수 있어 강제 변환.
+    """
     try:
-        divs = ticker_obj.dividends
+        divs = _coerce_to_series(ticker_obj.dividends)
         if divs is None or divs.empty:
             return []
-        annual = divs.groupby(divs.index.year).sum().tail(n_years)
-        return [
-            {
+        if not hasattr(divs.index, 'year'):
+            return []
+        annual = _coerce_to_series(divs.groupby(divs.index.year).sum())
+        if annual is None or annual.empty:
+            return []
+        annual = annual.tail(n_years)
+
+        records = []
+        for year, amount in annual.items():
+            try:
+                v = float(amount)
+            except (TypeError, ValueError):
+                continue
+            if pd.isna(v):
+                continue
+            records.append({
                 "source":      "YFINANCE",
                 "report_type": "배당이력",
                 "corp_code":   ticker,
@@ -132,11 +161,9 @@ def _collect_intl_dividend_history(ticker_obj, ticker: str, n_years: int = 5) ->
                 "sj_div":      "DIV_HIST",
                 "account_nm":  "연간배당",
                 "target_year": int(year),
-                "amount":      float(amount),
-            }
-            for year, amount in annual.items()
-            if not pd.isna(amount)
-        ]
+                "amount":      v,
+            })
+        return records
     except Exception as e:
         print(f"   ⚠️ [{ticker}] 배당 이력 수집 실패: {e}")
         return []

@@ -21,18 +21,47 @@ _BUYBACK_KEYS = (
 )
 
 
+def _coerce_to_series(obj):
+    """yfinance 의 .dividends / .cashflow row 가 DataFrame 으로 올 수도 있어
+       항상 Series 로 강제 변환. 변환 불가 시 None."""
+    if obj is None:
+        return None
+    if isinstance(obj, pd.Series):
+        return obj
+    if isinstance(obj, pd.DataFrame):
+        if obj.empty:
+            return None
+        # 단일 컬럼이면 squeeze, 다중 컬럼이면 첫 컬럼 선택
+        if obj.shape[1] == 1:
+            return obj.iloc[:, 0]
+        return obj.iloc[:, 0]
+    return None
+
+
 def _collect_dividend_history(ticker_obj, corp_code, stock_code, n_years=5):
-    """yfinance .dividends 호출 → 연간 합계 집계 → INDICATOR 스키마 레코드 반환."""
+    """yfinance .dividends 호출 → 연간 합계 집계 → INDICATOR 스키마 레코드 반환.
+
+    yfinance 버전에 따라 .dividends 가 Series/DataFrame 으로 다르게 반환되어,
+    _coerce_to_series 로 형태를 강제 통일.
+    """
     try:
-        divs = ticker_obj.dividends
+        divs = _coerce_to_series(ticker_obj.dividends)
         if divs is None or divs.empty:
             return []
+        if not hasattr(divs.index, 'year'):
+            return []
         # 연도별 합계
-        annual = divs.groupby(divs.index.year).sum()
+        annual = _coerce_to_series(divs.groupby(divs.index.year).sum())
+        if annual is None or annual.empty:
+            return []
         annual = annual.tail(n_years)
         records = []
         for year, amount in annual.items():
-            if pd.isna(amount):
+            try:
+                v = float(amount)
+            except (TypeError, ValueError):
+                continue
+            if pd.isna(v):
                 continue
             records.append({
                 "source":      "YFINANCE",
@@ -43,7 +72,7 @@ def _collect_dividend_history(ticker_obj, corp_code, stock_code, n_years=5):
                 "sj_div":      "DIV_HIST",
                 "account_nm":  "연간배당",
                 "target_year": int(year),
-                "amount":      float(amount),
+                "amount":      v,
             })
         return records
     except Exception as e:
@@ -64,26 +93,34 @@ def _collect_buyback_history(ticker_obj, corp_code, stock_code, n_years=5):
                 break
         if bb_row is None:
             return []
+        # 중복 키 등으로 DataFrame 으로 반환되는 경우 첫 행만 사용
+        bb_row = _coerce_to_series(bb_row)
+        if bb_row is None or bb_row.empty:
+            return []
 
         records = []
         for date_col, value in bb_row.items():
-            if pd.isna(value):
+            try:
+                v = float(value)
+            except (TypeError, ValueError):
+                continue
+            if pd.isna(v):
                 continue
             try:
                 year = date_col.year if hasattr(date_col, 'year') else int(str(date_col)[:4])
-                records.append({
-                    "source":      "YFINANCE",
-                    "report_type": "자사주이력",
-                    "corp_code":   corp_code,
-                    "stock_code":  stock_code,
-                    "fs_div":      "YF",
-                    "sj_div":      "BUYBACK",
-                    "account_nm":  "자사주매입",
-                    "target_year": int(year),
-                    "amount":      abs(float(value)),
-                })
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, AttributeError):
                 continue
+            records.append({
+                "source":      "YFINANCE",
+                "report_type": "자사주이력",
+                "corp_code":   corp_code,
+                "stock_code":  stock_code,
+                "fs_div":      "YF",
+                "sj_div":      "BUYBACK",
+                "account_nm":  "자사주매입",
+                "target_year": int(year),
+                "amount":      abs(v),
+            })
         return records[-n_years:]
     except Exception as e:
         print(f"   ⚠️ 자사주매입 수집 실패: {e}")
