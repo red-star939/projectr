@@ -4,7 +4,6 @@ import sys
 import gc
 from pathlib import Path
 from chromadb.utils import embedding_functions
-from llama_cpp import Llama
 
 # [1] 전역 페이지 설정 및 통합 모드 선언
 st.set_page_config(page_title="Poket-Asset Terminal v0.1", page_icon="📊", layout="wide")
@@ -20,7 +19,29 @@ sys.path.append(str(BASE_DIR / "src" / "news_agent"))
 sys.path.append(str(BASE_DIR / "src" / "financial_agent"))
 sys.path.append(str(BASE_DIR / "src" / "portfolio_agent"))
 
-# [2] 통합 모델 자동 예열 함수 (기존 로직 유지)
+
+def _can_load_llm() -> tuple[bool, str]:
+    """
+    LLM 로딩 가능 여부 사전 점검.
+
+    :return: (가능 여부, 사유 메시지)
+    """
+    # 1. llama_cpp import 가능?
+    try:
+        import importlib.util
+        if importlib.util.find_spec("llama_cpp") is None:
+            return False, "llama-cpp-python 패키지가 설치되지 않았습니다."
+    except Exception as e:
+        return False, f"llama_cpp 점검 실패: {e}"
+
+    # 2. 모델 파일 존재?
+    if not os.path.exists(MODEL_PATH):
+        return False, f"모델 파일 없음: {MODEL_PATH}"
+
+    return True, ""
+
+
+# [2] 통합 모델 자동 예열 함수 (lazy import 적용)
 def auto_initialize_engines():
     if st.session_state.get('shutdown_mode', False):
         st.sidebar.warning("⚠️ 엔진 정지 상태")
@@ -29,7 +50,7 @@ def auto_initialize_engines():
     with st.sidebar:
         st.write("---")
         st.subheader("⚙️ AI Engine Startup")
-        
+
         if 'embedding_fn' not in st.session_state:
             try:
                 with st.spinner("Embedding 로딩 중..."):
@@ -41,7 +62,23 @@ def auto_initialize_engines():
                 st.error(f"임베딩 오류: {e}")
 
         if 'llm_engine' not in st.session_state:
+            # LLM 환경 사전 점검
+            can_load, reason = _can_load_llm()
+            if not can_load:
+                st.warning(
+                    f"⚠️ LLM 비활성화: {reason}\n\n"
+                    "Financial Analyst 는 LLM 없이도 작동합니다. "
+                    "News Intelligence / Portfolio Agent 사용 시 LLM 설치 필요."
+                )
+                st.session_state.llm_disabled = True
+                # Financial Analyst 단독 사용 위해 부분 초기화 플래그
+                if 'embedding_fn' in st.session_state:
+                    st.session_state.initialized = True
+                return
+
             try:
+                # 지연 import: 사용 시점까지 미루어 미설치 환경에서도 앱 자체는 기동
+                from llama_cpp import Llama
                 with st.spinner("EXAONE LLM 로딩 중..."):
                     st.session_state.llm_engine = Llama(
                         model_path=MODEL_PATH, n_ctx=4096, n_gpu_layers=-1,
@@ -51,6 +88,9 @@ def auto_initialize_engines():
                 st.session_state.initialized = True
             except Exception as e:
                 st.error(f"LLM 오류: {e}")
+                st.session_state.llm_disabled = True
+                if 'embedding_fn' in st.session_state:
+                    st.session_state.initialized = True
 
 # [3] 사이드바: 네비게이션 및 자원 제어
 with st.sidebar:
@@ -88,11 +128,31 @@ elif app_mode == "Financial Analyst":
     app_1FS.main()
 
 elif app_mode == "News Intelligence":
-    # app_1NS.py 연결
-    import app_1NS
-    app_1NS.main()
+    if st.session_state.get('llm_disabled'):
+        st.title("📰 News Intelligence")
+        st.warning(
+            "이 에이전트는 EXAONE LLM (llama-cpp-python) 이 필요합니다.\n\n"
+            "현재 LLM 이 비활성화되어 있습니다. 설치 후 다시 실행해주세요."
+        )
+        st.info(
+            "💡 **설치 방법**\n"
+            "- CUDA 12.1 GPU 환경: `pip install llama-cpp-python==0.3.19 "
+            "--extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121`\n"
+            "- CPU 만 사용: `pip install llama-cpp-python`\n\n"
+            "또한 `src/news_agent/model/EXAONE-3.0-7.8B-Instruct-Q4_K_M.gguf` "
+            "모델 파일이 필요합니다."
+        )
+    else:
+        import app_1NS
+        app_1NS.main()
 
 elif app_mode == "Portfolio Agent":
-    # Portfolio Agent 연결 (app_1PF.py 참조)
-    import app_1PF
-    app_1PF.main()
+    if st.session_state.get('llm_disabled'):
+        st.title("💼 Portfolio Agent")
+        st.warning(
+            "이 에이전트는 EXAONE LLM (llama-cpp-python) 이 필요합니다.\n\n"
+            "현재 LLM 이 비활성화되어 있습니다. 설치 후 다시 실행해주세요."
+        )
+    else:
+        import app_1PF
+        app_1PF.main()
