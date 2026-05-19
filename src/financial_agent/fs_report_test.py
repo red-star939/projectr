@@ -1,6 +1,8 @@
 import pandas as pd
 from datetime import datetime
 
+from src.financial_agent.Extract_corr import is_suspicious_value
+
 # 카테고리 → 한글 섹션 제목
 _FSDIV_TITLE = {
     'VAL':    '밸류에이션',
@@ -16,22 +18,27 @@ _FSDIV_TITLE = {
 _FSDIV_ORDER = ['VAL', 'PROF', 'GROWTH', 'STAB', 'CF', 'DIV', 'MKT']
 
 
-def _fmt_indicator(amount, unit) -> str:
-    """INDICATOR 값을 단위에 맞춰 표시 문자열로 변환."""
+def _fmt_indicator(amount, unit, account_nm: str | None = None) -> str:
+    """INDICATOR 값을 단위에 맞춰 표시 문자열로 변환. 합리적 범위 이탈 시 ⚠️ 마커."""
     try:
         v = float(amount)
     except (TypeError, ValueError):
         return "N/A"
     if unit == '%':
-        return f"{v:.2f}%"
-    if unit == 'x':
-        return f"{v:.2f}x"
-    if unit == '일':
-        return f"{v:.1f}일"
-    if unit == '점수':
-        return f"{v:.2f}점"
-    # 원 단위 등 절댓값
-    return f"{v:,.0f}"
+        s = f"{v:.2f}%"
+    elif unit == 'x':
+        s = f"{v:.2f}x"
+    elif unit == '일':
+        s = f"{v:.1f}일"
+    elif unit == '점수':
+        s = f"{v:.2f}점"
+    else:
+        s = f"{v:,.0f}"
+
+    # SUSPICIOUS_RANGE 이탈 → ⚠️ 마커 (Apple ROE 141% 같은 극단값 식별)
+    if account_nm and is_suspicious_value(account_nm, v):
+        s += " ⚠️"
+    return s
 
 
 def _build_indicator_section(ind_df: pd.DataFrame) -> str:
@@ -52,7 +59,7 @@ def _build_indicator_section(ind_df: pd.DataFrame) -> str:
         section_md += f"\n### {title}\n"
         section_md += "| 지표 | 값 | 출처 |\n| :--- | ---: | :--- |\n"
         for _, r in rows.iterrows():
-            val = _fmt_indicator(r['amount'], r['sj_div'])
+            val = _fmt_indicator(r['amount'], r['sj_div'], r['account_nm'])
             src = str(r.get('report_type', ''))
             section_md += f"| **{r['account_nm']}** | {val} | `{src}` |\n"
 

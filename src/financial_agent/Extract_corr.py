@@ -346,6 +346,95 @@ PORTFOLIO_DEFAULT_INDICATORS: frozenset[str] = frozenset({
     '배당수익률', '배당성장률', '배당커버리지',
 })
 
+
+# ============================================================
+# 지표 합리적 범위 — 보고서 표시 시 이탈값에 ⚠️ 마커
+#   None = 해당 방향 제한 없음 (예: 베타는 음수 가능 → 하한 None)
+#   yfinance 데이터 이상 / 회계적 극단 케이스 (Apple ROE 141% 등) 식별용
+#   저장 데이터는 그대로, 표시 단계에서만 적용
+# ============================================================
+SUSPICIOUS_RANGE: dict[str, tuple[float | None, float | None]] = {
+    # ── 밸류에이션 ──
+    'PER':              (0,    100),
+    'PBR':              (0,    20),
+    'PSR':              (0,    50),
+    'PEG':              (-5,   10),
+    'EV/EBITDA':        (-20,  100),
+    'EV/Sales':         (0,    50),
+    'EV/FCF':           (-100, 200),
+    'P/FCF':            (0,    200),
+    'GP/A':             (0,    1.5),
+    'NCAV/시총':        (-2,   5),
+    'FCF수익률':         (-20,  30),
+    # ── 수익성 ──
+    'ROE':              (-50,  60),
+    'ROA':              (-30,  30),
+    '영업이익률':         (-50,  60),
+    '매출총이익률':       (0,    95),
+    'EBITDA마진':        (-50,  70),
+    'ROIC':             (-50,  60),
+    'ROCE':             (-50,  60),
+    'CROIC':            (-50,  60),
+    '자산회전율':         (0,    5),
+    '재고회전율':         (0,    50),
+    'DSO':              (0,    365),
+    'CCC':              (-180, 365),
+    # ── 안정성 ──
+    '부채비율':          (0,    400),
+    '유동비율':          (50,   600),
+    '당좌비율':          (30,   600),
+    '순부채/EBITDA':     (-10,  10),
+    'Piotroski_F':       (0,    9),
+    'Piotroski_가용항목수': (0, 9),
+    'Altman_Z':          (-5,   20),
+    # ── 현금흐름 ──
+    '영업CF품질비율':     (-3,   5),
+    'CapEx/매출':       (0,    50),
+    'Owner_Earnings수익률': (-10, 30),
+    # ── 배당 ──
+    '배당수익률':         (0,    15),
+    '배당성향':          (0,    200),
+    '배당커버리지':       (0,    50),
+    '배당성장률':         (-50,  100),
+    '자사주수익률':       (0,    20),
+    '총주주환원율':       (0,    30),
+    # ── 성장성 ──
+    '매출성장률':         (-80,  300),
+    'EPS성장률':         (-200, 1000),
+    '분기EPS성장률':     (-200, 1000),
+    'Rule_of_40':       (-100, 300),
+    '재투자율':          (-100, 200),
+    'SGR':              (-50,  50),
+    '매출CAGR_3Y':       (-30,  100),
+    '매출CAGR_5Y':       (-30,  100),
+    # ── 시장·기술적 ──
+    '베타':              (-2,   3),
+    '공매도잔고율':       (0,    50),
+    'RSI_14':           (0,    100),
+    'MA20_괴리율':       (-50,  100),
+    'MA60_괴리율':       (-50,  150),
+    'MA200_괴리율':      (-70,  200),
+    'MACD_히스토그램':    (-0.1, 0.1),
+    'Bollinger_%B':     (-0.5, 1.5),
+    '거래량추세_20/60':   (0.1,  5),
+}
+
+
+def is_suspicious_value(account_nm: str, amount) -> bool:
+    """지표 값이 SUSPICIOUS_RANGE 의 합리적 범위를 벗어났는지 판정."""
+    if account_nm not in SUSPICIOUS_RANGE:
+        return False
+    try:
+        v = float(amount)
+    except (TypeError, ValueError):
+        return False
+    lo, hi = SUSPICIOUS_RANGE[account_nm]
+    if lo is not None and v < lo:
+        return True
+    if hi is not None and v > hi:
+        return True
+    return False
+
 def _get_yf_value(df: pd.DataFrame, account_nm: str):
     """DB DataFrame에서 YFINANCE 항목 최신값을 float으로 반환. 없으면 None."""
     mask = (df['source'] == 'YFINANCE') & (df['account_nm'] == account_nm)
@@ -718,9 +807,11 @@ def compute_financial_indicators(corp: str) -> list:
     # ── 5. 배당 (Dividend) ───────────────────────────────────────────
 
     # 배당수익률
+    #   yfinance API 변경 (~2024) — dividendYield 가 이미 % 단위로 반환됨
+    #   (예: 삼성전자 0.53 = 0.53%). 과거의 소수형 가정으로 ×100 적용 시 100배 부풀려짐.
     div_yield = _get_yf_value(df, 'dividendYield')
     if div_yield is not None:
-        _add('배당수익률', div_yield * 100, 'YFINANCE', 'DIV', '%')
+        _add('배당수익률', div_yield, 'YFINANCE', 'DIV', '%')
 
     # 배당성향
     payout = _get_yf_value(df, 'payoutRatio')
