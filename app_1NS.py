@@ -38,8 +38,15 @@ def main():
                 report_placeholder.markdown(full_report + "▌")
             report_placeholder.markdown(full_report)
             
+            # [단계 3] 영구 저장 — NS_DB + Markdown 파일 (#6 markdown export 복구)
             reporter._save_to_db(keyword, full_report)
-            status.update(label="분석 완료 및 NS_DB 저장 성공", state="complete")
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            try:
+                md_path = reporter._save_to_md(keyword, full_report, today_str)
+                st.toast(f"📄 보고서 저장: {md_path}", icon="📄")
+            except Exception as e:
+                st.warning(f"⚠️ Markdown 저장 실패 (NS_DB 는 정상 저장됨): {e}")
+            status.update(label="분석 완료 및 NS_DB·Markdown 저장 성공", state="complete")
 
 if __name__ == "__main__":
     main()

@@ -20,11 +20,10 @@ DB_PATH = os.path.join(PROJECT_ROOT, "data", "News_DB")
 NS_DB_PATH = os.path.join(PROJECT_ROOT, "data", "NS_DB")
 REPORT_DIR = os.path.join(BASE_DIR, "reports")
 
-# [ImportError 해결] 최상위 레벨에 함수 배치
-def sanitize_collection_name(name):
-    """news_fast_stream.py와 동일한 명칭 인코딩 규칙을 적용합니다."""
-    encoded = "".join([char if re.match(r'[a-zA-Z0-9]', char) else f"_{ord(char):x}" for char in name])
-    return f"kwd_{encoded}"[:63]
+# [#3 prefix 통일] news_fast_stream 의 canonical 함수를 re-export
+#   이전: 본 모듈은 'kwd_' / news_fast_stream 은 'news_' 사용 → collection 명 불일치
+#   현재: 두 모듈 모두 news_fast_stream.sanitize_collection_name 사용 (prefix 'news_')
+from news_fast_stream import sanitize_collection_name  # noqa: F401  (re-export)
 
 class BatExaoneReporter:
     def __init__(self):
