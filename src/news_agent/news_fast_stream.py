@@ -8,6 +8,8 @@ import chromadb
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.common.exceptions import TimeoutException
 from webdriver_manager.chrome import ChromeDriverManager
 from readability import Document
 from bs4 import BeautifulSoup
@@ -92,7 +94,11 @@ class BatFastStreamer:
         return sanitize_collection_name(name)
 
     def _crawl_and_map(self, url, collection, reporter):
-        """[Map Phase] 수집과 동시에 EXAONE 요약 수행."""
+        """[Map Phase] 수집과 동시에 EXAONE 요약 수행.
+
+        Google News RSS 의 entry.link 는 redirect 래퍼 URL 이므로
+        WebDriverWait 으로 실제 기사 URL 로의 redirect 완료를 대기한다.
+        """
         driver = self._get_driver()
         try:
             try:
@@ -102,6 +108,19 @@ class BatFastStreamer:
                 # page_source 가 비어있으면 조기 종료
                 if not driver.page_source:
                     return f"❌ 페이지 로드 실패: {str(e)[:60]}"
+
+            # Google News redirect 처리 (#News 디버그):
+            #   RSS 의 link 가 news.google.com/rss/articles/CBMi... 형태인 경우
+            #   JavaScript redirect 가 실제 기사 URL 로 이동할 때까지 대기.
+            #   redirect 가 완료되지 않으면 Google News 자체 페이지가 로드되어
+            #   본문 추출 실패 ("본문 부족: Google 뉴스..." 무한 반복) 가 발생.
+            if 'news.google.com' in driver.current_url:
+                try:
+                    WebDriverWait(driver, 8).until(
+                        lambda d: 'news.google.com' not in d.current_url
+                    )
+                except TimeoutException:
+                    return f"❌ redirect 실패 (Google News 에 머무름): {url[:50]}..."
 
             doc = Document(driver.page_source)
             soup = BeautifulSoup(doc.summary(), 'html.parser')
@@ -125,8 +144,11 @@ class BatFastStreamer:
                         documents=[summary_text],
                         metadatas=[{"title": doc.title(), "url": url}],
                     )
-                return f"✅ 요약 완료: {doc.title()[:15]}..."
-            return f"⚠️ 본문 부족: {doc.title()[:15] if doc.title() else url[:30]}..."
+                return f"✅ 요약 완료: {doc.title()[:25]}..."
+            # 본문 부족 — 진단 정보(실제 도착 URL 도메인) 함께 표시
+            from urllib.parse import urlparse
+            arrived = urlparse(driver.current_url).netloc or '?'
+            return f"⚠️ 본문 부족 [@{arrived}]: {doc.title()[:25] if doc.title() else url[:30]}..."
         except Exception as e:
             return f"❌ 실패: {str(e)[:80]}"
         finally:
