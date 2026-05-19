@@ -1,14 +1,10 @@
 import streamlit as st
-import time
-import json
-import re
 import hashlib
 import threading
 import concurrent.futures
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 import chromadb
-from chromadb.utils import embedding_functions
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -17,35 +13,17 @@ from readability import Document
 from bs4 import BeautifulSoup
 import feedparser
 import urllib.parse
+import re
 
-# [상대 경로 설정] 프로젝트 루트의 data/News_DB 지정
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR.parent.parent
 DB_PATH = str(PROJECT_ROOT / "data" / "News_DB")
 
 class BatFastStreamer:
-    def __init__(self, limit=10):
+    def __init__(self, limit=7): 
         self.limit = limit
         self.client = chromadb.PersistentClient(path=DB_PATH)
-        self.lock = threading.Lock()
-        
-        # [핵심] 공유 임베딩 모델 확인 및 지연 로딩
-        if 'embedding_fn' in st.session_state:
-            self.embedding_fn = st.session_state.embedding_fn
-            self.model_ready = True
-        else:
-            # 예열된 모델이 없을 경우 여기서 로드
-            self.model_ready = False
-            self.model_thread = threading.Thread(target=self._load_embedding_model)
-            self.model_thread.start()
-
-    def _load_embedding_model(self):
-        """세션에 모델이 없을 경우 비상 로딩을 수행합니다."""
-        self.embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name="jhgan/ko-sroberta-multitask"
-        )
-        st.session_state.embedding_fn = self.embedding_fn
-        self.model_ready = True
+        self.lock = threading.Lock() # VRAM 6GB 보호용
 
     def _get_driver(self):
         options = Options()
@@ -55,64 +33,66 @@ class BatFastStreamer:
         return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
     def _sanitize_name(self, name):
+        """ChromaDB 규칙 준수: 알파벳/숫자로 시작 필수"""
         encoded = "".join([char if re.match(r'[a-zA-Z0-9]', char) else f"_{ord(char):x}" for char in name])
-        return f"kwd_{encoded}"[:63]
+        return f"news_{encoded}"[:63] # 'news_' 접두사로 시작 규칙 강제 적용
 
-    def _crawl_and_sync(self, url, collection):
+    def _crawl_and_map(self, url, collection, reporter):
+        """[Map Phase] 수집과 동시에 EXAONE 요약 수행"""
         driver = self._get_driver()
         try:
             driver.get(url)
-            time.sleep(2)
             doc = Document(driver.page_source)
             soup = BeautifulSoup(doc.summary(), 'html.parser')
-            lines = [line.strip() for line in soup.get_text("\n", strip=True).splitlines() if len(line.strip()) > 10]
+            lines = [l.strip() for l in soup.get_text("\n", strip=True).splitlines() if len(l.strip()) > 20]
             raw_content = "\n\n".join(lines)
             
             if len(raw_content) > 100:
-                now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                md_content = f"# {doc.title()}\n\n- 수집: {now_str}\n- URL: {url}\n\n---\n\n{raw_content}"
+                # 6GB VRAM 환경이므로 추론 시에만 Lock 획득
+                with self.lock:
+                    summary_res = reporter._generate(
+                        system="기사의 핵심 내용을 2문장으로 요약하십시오.",
+                        user=raw_content[:2500]
+                    )
+                
+                summary_text = summary_res['choices'][0]['text'].strip()
                 doc_id = hashlib.md5(url.encode()).hexdigest()
 
                 with self.lock:
                     collection.upsert(
                         ids=[doc_id],
-                        documents=[md_content],
+                        documents=[summary_text],
                         metadatas=[{"title": doc.title(), "url": url}]
                     )
-                return f"✅ 수집완료: {doc.title()[:15]}..."
+                return f"✅ 요약 완료: {doc.title()[:15]}..."
         except Exception as e:
-            # bare except는 KeyboardInterrupt/SystemExit까지 삼키므로 Exception으로 한정
-            return f"❌ 실패: {e}"
+            return f"❌ 실패: {str(e)}"
         finally:
             driver.quit()
 
-    def run(self, keyword):
-        # RSS 검색
-        encoded = urllib.parse.quote(f"{keyword} when:1h")
-        rss_url = f"https://news.google.com/rss/search?q={encoded}&hl=ko&gl=KR&ceid=KR:ko"
-        feed = feedparser.parse(rss_url)
-        links = [e.link for e in feed.entries[:self.limit]]
+    def run(self, keyword, reporter):
+        # 1. 쿼리 확장 (실시간 1h + 과거 1년)
+        one_year_ago = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
+        queries = [f"{keyword} when:1h", f"{keyword} after:{one_year_ago}"]
+        
+        links = []
+        for q in queries:
+            encoded = urllib.parse.quote(q)
+            feed = feedparser.parse(f"https://news.google.com/rss/search?q={encoded}&hl=ko&gl=KR&ceid=KR:ko")
+            links.extend([e.link for e in feed.entries[:self.limit]])
 
-        if not links:
-            print("[!] 최근 1시간 이내 뉴스가 없습니다.")
-            return []
+        links = list(set(links))
+        if not links: return None
 
-        # 모델 준비 대기
-        if not self.model_ready:
-            self.model_thread.join()
-
-        # 컬렉션 초기화 (Fresh Sync)
         col_name = self._sanitize_name(keyword)
-        try:
-            self.client.delete_collection(col_name)
-        except Exception:
-            # 컬렉션이 존재하지 않거나 ChromaDB 내부 에러는 무시하고 진행
-            pass
-        collection = self.client.create_collection(name=col_name, embedding_function=self.embedding_fn)
+        try: self.client.delete_collection(col_name)
+        except: pass
+        collection = self.client.create_collection(name=col_name, embedding_function=reporter.embedding_fn)
 
-        print(f"[*] 병렬 수집 가동: {len(links)}개 타겟 분석...")
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            list(executor.map(lambda u: self._crawl_and_sync(u, collection), links))
+        # 2. 병렬 파이프라인 (I/O 병렬, LLM 순차)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            futures = [executor.submit(self._crawl_and_map, url, collection, reporter) for url in links]
+            for future in concurrent.futures.as_completed(futures):
+                st.write(future.result())
 
-        final_data = collection.get(include=['metadatas'])
-        return final_data['metadatas']
+        return collection.get(include=['metadatas', 'documents'])
