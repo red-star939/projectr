@@ -1,14 +1,28 @@
 import streamlit as st
+import sys
+from pathlib import Path
 from datetime import datetime
+
+# standalone 실행 호환 — project root + src/news_agent 를 sys.path 에
+_ROOT = Path(__file__).resolve().parent
+for _p in (str(_ROOT), str(_ROOT / "src" / "news_agent")):
+    if _p not in sys.path:
+        sys.path.append(_p)
+
 from news_fast_stream import BatFastStreamer
 from news_sum4_3 import BatExaoneReporter
+from src.financial_agent import ui_search
 
 def main():
     st.title("📊 Pipeline News Intelligence")
-    
-    with st.form("news_form"):
-        keyword = st.text_input("분석 키워드", placeholder="예: 양자 컴퓨팅")
-        submit = st.form_submit_button("초고속 파이프라인 가동")
+
+    # type-ahead 자동완성: 회사명 + 키워드(섹터) 통합
+    keyword = ui_search.render_search(
+        "분석 키워드 또는 회사명",
+        mode='unified',
+        key='ns_search',
+    )
+    submit = st.button("초고속 파이프라인 가동", use_container_width=True, disabled=not keyword)
 
     if submit and keyword:
         # [단계 1] 엔진 로드 및 스트리머 초기화

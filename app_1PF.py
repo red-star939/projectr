@@ -11,6 +11,7 @@ sys.path.append(str(BASE_DIR / "src" / "news_agent"))
 
 from portfolio_manager import BatPortfolioAgent
 from news_sum4_3 import BatExaoneReporter # 최신 공유 엔진 로더 활용
+from src.financial_agent import ui_search
 
 # [2] 통합 대시보드 호환 설정
 if "app_main" not in sys.modules:
@@ -30,10 +31,19 @@ def main():
         else:
             st.warning("엔진 예열 필요 (지연 로딩 모드)")
 
-    # [4] 분석 실행 섹션
-    target_corp = st.text_input("전략 수립 대상 기업명", value="삼성전자", key="port_target")
-    
-    if st.button("통합 전략 생성 및 저장", use_container_width=True):
+    # [4] 분석 실행 섹션 — type-ahead 자동완성 (회사 + 키워드 통합)
+    target_corp = ui_search.render_search(
+        "전략 수립 대상 기업명 또는 키워드",
+        mode='unified',
+        key='pf_search',
+        default='삼성전자',
+    )
+
+    if st.button(
+        "통합 전략 생성 및 저장",
+        use_container_width=True,
+        disabled=not target_corp,
+    ):
         try:
             # 에이전트 인스턴스화 (임베딩 모델 자동 체크 포함)
             agent = BatPortfolioAgent()
