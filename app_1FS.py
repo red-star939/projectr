@@ -27,45 +27,49 @@ if "app_main" not in sys.modules:
 def main():
     st.title("🔍 기업 가치 분석 및 지식화")
 
-    # ── 시장 선택 (국내 / 해외) ──────────────────────────────────────
-    market_mode = st.sidebar.radio(
+    # ── 시장 선택 + 검색 (메인 화면 상단) ─────────────────────────────
+    market_mode = st.radio(
         "시장 선택",
         ["🇰🇷 국내 기업 (DART)", "🌍 해외 기업 (Ticker)"],
         key="fs_market_mode",
+        horizontal=True,
     )
     is_intl = market_mode == "🌍 해외 기업 (Ticker)"
 
-    with st.sidebar:
-        if not is_intl:
-            # 국내: type-ahead 자동완성 (회사명/별칭/KRX 6자리/오타 허용)
-            target_corp = ui_search.render_search(
-                "분석 대상 (국내)",
-                mode='company_kr',
-                key='fs_kr_search',
-                default='삼성전자',
+    if not is_intl:
+        # 국내: type-ahead 자동완성 (회사명/별칭/KRX 6자리/오타 허용)
+        target_corp = ui_search.render_search(
+            "분석 대상 (국내)",
+            mode='company_kr',
+            key='fs_kr_search',
+            default='삼성전자',
+        )
+        # 미입력 시 dropdown 폴백 (전체 corp_code)
+        if not target_corp:
+            all_corps = list(utils_.corp_code.keys())
+            target_corp = st.selectbox(
+                "또는 dropdown 에서 선택",
+                all_corps,
+                index=all_corps.index("삼성전자") if "삼성전자" in all_corps else 0,
+                key="fs_target_select",
             )
-            # 미입력 시 dropdown 폴백 (전체 corp_code)
-            if not target_corp:
-                all_corps = list(utils_.corp_code.keys())
-                target_corp = st.selectbox(
-                    "또는 dropdown 에서 선택",
-                    all_corps,
-                    index=all_corps.index("삼성전자") if "삼성전자" in all_corps else 0,
-                    key="fs_target_select",
-                )
-        else:
-            # 해외: type-ahead 자동완성 (alias / ticker_pass / Yahoo Search)
-            target_corp = ui_search.render_search(
-                "분석 대상 (해외)",
-                mode='company_intl',
-                key='fs_intl_search',
-                default='AAPL',
-            )
-            if not target_corp:
-                target_corp = "AAPL"
-                st.caption("⚠️ 입력 없음 — 기본값 AAPL 사용")
+    else:
+        # 해외: type-ahead 자동완성 (alias / ticker_pass / Yahoo Search)
+        target_corp = ui_search.render_search(
+            "분석 대상 (해외)",
+            mode='company_intl',
+            key='fs_intl_search',
+            default='AAPL',
+        )
+        if not target_corp:
+            target_corp = "AAPL"
+            st.caption("⚠️ 입력 없음 — 기본값 AAPL 사용")
 
-    analyze_btn = st.sidebar.button("정밀 분석 및 DB 저장 시작", use_container_width=True)
+    analyze_btn = st.button(
+        "정밀 분석 및 DB 저장 시작",
+        use_container_width=True,
+        disabled=not target_corp,
+    )
 
     # ── 결과 컨텍스트 초기화 ────────────────────────────────────────
     df = None
@@ -78,7 +82,7 @@ def main():
         if is_intl:
             # ── 해외 종목 분석 흐름 ──────────────────────────────────
             if not target_corp:
-                st.sidebar.error("티커를 입력해주세요.")
+                st.error("티커를 입력해주세요.")
             else:
                 with st.status(f"[{target_corp}] 해외 종목 분석 중...", expanded=True) as status:
                     # 1. 재무제표 수집 (YF_FS source)
