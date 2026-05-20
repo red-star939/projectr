@@ -14,7 +14,7 @@ sys.modules["app_main"] = sys.modules[__name__]
 
 # 모듈 로딩 경로 동기화
 BASE_DIR = Path(__file__).resolve().parent
-for path_dir in [BASE_DIR, BASE_DIR / "src" / "news_agent", BASE_DIR / "src" / "financial_agent", BASE_DIR / "src" / "portfolio_agent", BASE_DIR / "src" / "general"]:
+for path_dir in [BASE_DIR, BASE_DIR / "src" / "news_agent", BASE_DIR / "src" / "financial_agent", BASE_DIR / "src" / "portfolio_agent"]:
     if str(path_dir) not in sys.path:
         sys.path.append(str(path_dir))
 
@@ -139,14 +139,8 @@ def main():
 
     # ── CASE 3: 일반 사용자용 터미널 활성화 상태 ────────────────────
     elif st.session_state.user_role == "general":
-        try:
-            # 일반 사용자용 고속 파이프라인 모듈 동적 로딩 및 집행
-            import app_general_mode
-            app_general_mode.main()
-        except ModuleNotFoundError as e:
-            st.error(f"일반 사용자 에이전트 인출 실패 (의존성 패키지 누락): {e}")
-        except Exception as e:
-            st.error(f"터미널 가동 중 예외 발생: {e}")
+        st.title("General User Terminal")
+        st.info("일반 사용자용 파이프라인 인터페이스 연결 대기 중입니다.")
 
 if __name__ == "__main__":
     main()
