@@ -2,7 +2,7 @@ import streamlit as st
 import sys
 from pathlib import Path
 
-# [1] 전역 페이지 설정
+# [1] 전역 페이지 설정 (메인 터미널 모듈인 app_main이 로딩되어 있지 않은 단독 실행 환경일 때만 가동)
 if "app_main" not in sys.modules:
     st.set_page_config(
         page_title="General Intelligence Terminal",
@@ -10,32 +10,34 @@ if "app_main" not in sys.modules:
         initial_sidebar_state="collapsed"
     )
 
-# [2] 경로 설정 및 모듈 탐색 우선순위 지정
+# [2] Pathlib 기반 상대 경로 연산 및 탐색 우선순위 지정 (ModuleNotFoundError 방지)
 BASE_DIR = Path(__file__).resolve().parent
+
 PATH_EXTENSIONS = [
-    BASE_DIR / "src" / "general",
-    BASE_DIR / "src" / "news_agent",
-    BASE_DIR / "src" / "financial_agent",
-    BASE_DIR / "src" / "portfolio_agent"
+    BASE_DIR / "src" / "general",          # 일반 사용자용 에이전트 패키지 경로
+    BASE_DIR / "src" / "news_agent",       # BatExaoneReporter 의존성 경로
+    BASE_DIR / "src" / "financial_agent",  # ui_search 및 conSQL 의존성 경로
+    BASE_DIR / "src" / "portfolio_agent"   # portfolio_manager 의존성 경로
 ]
 
 for path_dir in PATH_EXTENSIONS:
     if str(path_dir) not in sys.path:
+        # insert(0) 기법을 적용하여 로컬 패키지를 venv 라이브러리보다 최우선 순위로 지정
         sys.path.insert(0, str(path_dir))
 
-# [3] 에이전트 및 엔진 임포트
+# [3] 상대 경로 설정 확인 후 백엔드 공용 엔진 및 고속 에이전트 모듈 임포트
 from news_sum4_3 import BatExaoneReporter
 from src.financial_agent import ui_search
 from general_news_agent import GeneralFastNewsAgent
 from general_financial_agent import GeneralFastFinancialAgent
-from general_portfolio_agent import GeneralFastPortfolioAgent
+from general_portfolio_agent import GeneralFastPortfolioAgent  # 독립 구현된 에이전트 임포트
 
 def main():
     st.title("General User Terminal")
-    st.markdown("일반 사용자를 위한 지능형 자산 분석 및 포트폴리오 생성 패널입니다.")
+    st.markdown("일반 사용자가 사용하기 편하도록 구성한 모드입니다.")
     st.markdown("---")
     
-    # 통합 검색창
+    # 통합 검색창 컴포넌트 매핑
     keyword = ui_search.render_search(
         "분석 키워드 또는 회사명 입력",
         mode='unified',
@@ -45,57 +47,56 @@ def main():
     submit_btn = st.button("최종 인텔리전스 분석", use_container_width=True, disabled=not keyword)
     
     if submit_btn and keyword:
-        # 1. 에이전트 초기화
+        # 1. 공용 지식화 백엔드 엔진 및 일반용 고속 에이전트 초기화
         reporter = BatExaoneReporter()
         news_agent = GeneralFastNewsAgent()
         finance_agent = GeneralFastFinancialAgent()
-        portfolio_agent = GeneralFastPortfolioAgent()
+        portfolio_agent = GeneralFastPortfolioAgent()  # 신규 UI 에이전트 인스턴스화
         
-        # 2. 데이터 정제 시퀀스 (st.status)
+        # 2. 통합 진행 가드 작동 (단일 st.status 내부에 모든 계산 시퀀스 집중)
         with st.status(f"[{keyword}] 통합 자산 데이터 정제 및 수치 연산 집행 중...", expanded=True) as status:
             
+            # 흐린 글자(st.caption) 출력을 위한 통일된 인라인 로거 바인딩
             def streamlit_logger(message: str):
                 st.caption(message)
             
-            # [시퀀스 A] 금융 지표 인출
+            # [시퀀스 A] 금융 지표 분석 에이전트 구동 (SQL 캐시 고속 탐색)
             df, finance_md, corr_summary = finance_agent.fetch_financial_indicators_optimized(
                 corp_name=keyword, 
                 reporter=reporter, 
                 status_callback=streamlit_logger
             )
             
-            # [시퀀스 B] 뉴스 스니펫 인출
+            # [시퀀스 B] 초고속 뉴스 에이전트 구동 (메모리 자가 어텐션 풀링 행렬 계산)
             snippets = news_agent.fetch_news_snippets_optimized(
                 keyword=keyword, 
                 reporter=reporter, 
                 status_callback=streamlit_logger
             )
             
-            # [시퀀스 C] 포트폴리오 컨텍스트 준비
+            # [시퀀스 C] 독립형 포트폴리오 에이전트 가동 (하이브리드 DB 지식 인출)
             portfolio_context = portfolio_agent.render_portfolio_pipeline(
                 keyword=keyword,
                 reporter=reporter,
                 status_callback=streamlit_logger
             )
             
+            # 파이프라인 정합성 최종 검증 및 결론 도출
             if snippets or (df is not None and not df.empty):
-                status.update(label="데이터 인출 및 파이프라인 준비 완료", state="complete", expanded=False)
+                status.update(label="셀프 어텐션 적용 및 포트폴리오 분석 완료", state="complete", expanded=False)
             else:
                 status.update(label="데이터 확보 실패", state="error")
+                st.warning("선택한 키워드에 대해 처리 가능한 유효 데이터가 존재하지 않습니다.")
                 st.stop()
                 
-        # 3. 탭 인터페이스 (포트폴리오 생성 탭을 첫 번째로 배치)
-        tab_portfolio, tab_news, tab_finance = st.tabs([
-            "💼 포트폴리오 생성", 
+        # 3. 탭(Tabs) 인터페이스 분할 배치를 통한 UI 컨텍스트 격리 (포트폴리오 탭 반영)
+        tab_news, tab_finance, tab_portfolio = st.tabs([
             "📊 뉴스 분석", 
-            "📈 지표 분석"
+            "📈 지표 분석",
+            "💼 포트폴리오 생성"
         ])
         
-        # [중요: 실행 순서 제어]
-        # 사용자가 첫 번째 탭(포트폴리오)을 보고 있더라도, 
-        # 내부적으로 뉴스 분석과 지표 분석이 먼저 실행되어 DB를 업데이트해야 합니다.
-
-        # --- [실행 1] 뉴스 분석 (Tab 2) ---
+        # [Tab 1: 뉴스 에이전트 출력 영역]
         with tab_news:
             if snippets:
                 st.subheader("뉴스 목록")
@@ -106,7 +107,11 @@ def main():
                 st.subheader("실시간 시장 트렌드 통합 분석 리포트")
                 news_placeholder = st.empty()
                 
-                sys_msg_ns = f"당신은 보편적 사용자를 위한 뉴스 분석가입니다. {keyword} 관련 주요 시장 트렌드를 쉽게 설명하세요."
+                sys_msg_ns = (
+                    f"당신은 보편적 사용자를 위한 뉴스 분석가입니다. 제시된 {keyword} 관련 정제 뉴스 목록을 기반으로 "
+                    "주요 시장 트렌드와 시사점을 일반 사용자가 이해하기 쉽도록 명확하게 작성하십시오. 원천 데이터에 없는 사실은 추정하지 마십시오."
+                )
+                
                 context_lines = [f"[{i}] {s['title']} ({s['date']})" for i, s in enumerate(snippets, 1)]
                 raw_context_ns = "\n".join(context_lines)
                 
@@ -116,37 +121,43 @@ def main():
                     news_placeholder.markdown(full_report_ns + "▌")
                 news_placeholder.markdown(full_report_ns)
                 
-                # 분석 결과를 DB에 저장 (포트폴리오 에이전트가 이를 참조함)
                 reporter._save_to_db(f"GENERAL_{keyword}", full_report_ns)
+                from datetime import datetime
+                today_str = datetime.now().strftime("%Y-%m-%d")
+                reporter._save_to_md(f"GENERAL_{keyword}", full_report_ns, today_str)
             else:
-                st.info("뉴스 정보가 없습니다.")
-
-        # --- [실행 2] 지표 분석 (Tab 3) ---
+                st.info("표출 가능한 실시간 뉴스 정보가 없습니다.")
+                
+        # [Tab 2: 금융 지표 에이전트 출력 영역]
         with tab_finance:
             if df is not None and finance_md:
-                st.subheader(f"{keyword} 핵심 투자 지표")
+                st.subheader(f"{keyword} 핵심 투자 지표 분석 보고서")
+                
                 if corr_summary and corr_summary["bench_val"] is not None:
                     col_m1, col_m2 = st.columns(2)
                     with col_m1:
-                        st.metric(label="KOSPI 상관계수", value=f"{corr_summary['bench_val']:.4f}")
+                        st.metric(label="KOSPI 주가 상관계수 (5Y)", value=f"{corr_summary['bench_val']:.4f}")
                     with col_m2:
                         if corr_summary["competitors"]:
                             top_comp, top_val = corr_summary["competitors"][0]
-                            st.metric(label=f"경쟁사 동조화({top_comp})", value=f"{top_val:.4f}")
+                            st.metric(label=f"최대 경쟁사 동조화 ({top_comp})", value=f"{top_val:.4f}")
+                    st.divider()
+                
                 st.markdown(finance_md)
             else:
-                st.info("재무 데이터가 없습니다.")
+                st.info("사전 적재된 재무 지표 데이터프레임 구조가 발견되지 않았습니다. 백엔드 배치를 점검하십시오.")
 
-        # --- [실행 3] 포트폴리오 생성 (Tab 1) ---
+        # [Tab 3: 포트폴리오 에이전트 출력 영역]
         with tab_portfolio:
-            # 앞선 분석들이 완료된 후 최종 전략 생성
+            # 분리 구현된 UI 에이전트에 스트리밍 및 파일 보존 전권 위임
             portfolio_agent.display_portfolio_interface(
                 keyword=keyword,
                 context=portfolio_context,
                 reporter=reporter
             )
                 
-        st.toast(f"통합 인텔리전스 분석 완료", icon="💾")
+        # 최종 백엔드 처리 완료 피드백 알림
+        st.toast(f"일반 사용자용 통합 인텔리전스 3대 분산 파이프라인 가동 완료", icon="💾")
 
 if __name__ == "__main__":
     main()
