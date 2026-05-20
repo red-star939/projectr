@@ -2,7 +2,16 @@ venv/
 venv1/
 __pycache__/
 data/Financial_Statement/
+data/Financial_Statement_all/
 data/News_Reports/
+# ── DB 런타임 (ef8cba1 초기본 commit 후 추적 해제) ──
+# 각 PC 의 로컬 분석 결과가 commit 으로 섞이지 않도록 무시.
+# 신규 사용자는 ef8cba1 의 초기본을 clone 으로 받음.
+data/FS.db
+data/FS_DB/
+data/NS_DB/
+data/News_DB/
+data/Portfolio/
 model/
 src/news_agent/old/
 test.py

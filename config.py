@@ -7,3 +7,4 @@ load_dotenv(dotenv_path=env_path)
 
 DART_API_KEY = os.getenv("DART_API_KEY")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")

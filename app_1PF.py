@@ -10,7 +10,8 @@ sys.path.append(str(BASE_DIR / "src" / "portfolio_agent"))
 sys.path.append(str(BASE_DIR / "src" / "news_agent"))
 
 from portfolio_manager import BatPortfolioAgent
-from news_sum4_3 import BatExaoneReporter # 최신 공유 엔진 로더 활용
+from news_sum4_3 import BatExaoneReporter 
+from src.financial_agent import ui_search
 
 # [2] 통합 대시보드 호환 설정
 if "app_main" not in sys.modules:
@@ -18,28 +19,24 @@ if "app_main" not in sys.modules:
 
 def main():
     st.title("💼 Portfolio Central Terminal")
-    st.info("재무(FS_DB) 및 뉴스 지능(NS_DB) 통합 분석 엔진")
-    st.markdown("---")
-    
-    # [3] 지능형 엔진 상태 체크 [핵심 수정 사항]
-    # app_v01.py에서 이미 준비된 엔진이 있는지 확인
-    with st.sidebar:
-        st.subheader("LLM Intelligence Status")
-        if 'llm_engine' in st.session_state and 'embedding_fn' in st.session_state:
-            st.success("LLM 모델 엔진 연결됨")
-        else:
-            st.warning("엔진 예열 필요 (지연 로딩 모드)")
+    # [3] 분석 실행 섹션 — type-ahead 자동완성 (회사 + 키워드 통합)
+    target_corp = ui_search.render_search(
+        "전략 수립 대상 기업명 또는 키워드",
+        mode='unified',
+        key='pf_search',
+        default='삼성전자',
+    )
 
-    # [4] 분석 실행 섹션
-    target_corp = st.text_input("전략 수립 대상 기업명", value="삼성전자", key="port_target")
-    
-    if st.button("통합 전략 생성 및 저장", use_container_width=True):
+    if st.button(
+        "통합 전략 생성 및 저장",
+        use_container_width=True,
+        disabled=not target_corp,
+    ):
         try:
             # 에이전트 인스턴스화 (임베딩 모델 자동 체크 포함)
             agent = BatPortfolioAgent()
             
             # 분석 엔진(EXAONE) 로드 체크 및 인출
-            # BatExaoneReporter 내부에서 st.session_state.llm_engine을 자동으로 체크함
             reporter = BatExaoneReporter()
 
             # [단계 1] 분산된 지식 데이터 인출 가시화

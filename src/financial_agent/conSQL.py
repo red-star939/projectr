@@ -2,6 +2,7 @@ import sqlite3
 import json
 import pandas as pd
 import os
+import datetime
 
 class FS():
     def __init__(self, init_sectors=True):
@@ -11,15 +12,83 @@ class FS():
         '''
         db_name = "data/FS.db"
         self.db_name = db_name
-        
+
         # 폴더 생성 로직
         os.makedirs(os.path.dirname(db_name), exist_ok=True)
         self.conn = sqlite3.connect(db_name)
-        
+
         # 마스터 테이블 자동 생성 및 초기화 체크
         if init_sectors:
             self._init_sector_table()
+
+        # 데이터 수집 시각 추적 테이블
+        self._init_collection_log_table()
         
+    def _init_collection_log_table(self):
+        """
+        COLLECTION_LOG: 회사·소스별 마지막 API 수집 시각을 추적한다.
+            (corp_name, source) 가 PRIMARY KEY → 동일 조합은 항상 1행.
+            log_collection() 호출 시 last_collected_at 갱신 (UPSERT).
+        """
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS COLLECTION_LOG (
+                    corp_name         TEXT,
+                    source            TEXT,
+                    last_collected_at TIMESTAMP,
+                    PRIMARY KEY (corp_name, source)
+                )
+            """)
+            self.conn.commit()
+        except sqlite3.Error as e:
+            print(f"COLLECTION_LOG 테이블 생성 중 오류 발생: {e}")
+
+    def log_collection(self, corp_name, source):
+        """
+        회사·소스 조합의 마지막 수집 시각을 현재 시각으로 업서트한다.
+
+        :param corp_name: 회사명 또는 티커
+        :param source:    'DART' | 'DART_ALL' | 'YFINANCE' | 'YF_FS' 등
+        """
+        try:
+            now = datetime.datetime.now().isoformat(timespec='seconds')
+            cursor = self.conn.cursor()
+            cursor.execute(
+                "INSERT OR REPLACE INTO COLLECTION_LOG (corp_name, source, last_collected_at) "
+                "VALUES (?, ?, ?)",
+                (corp_name, source, now),
+            )
+            self.conn.commit()
+            return now
+        except sqlite3.Error as e:
+            print(f"COLLECTION_LOG 갱신 중 오류 발생: {e}")
+            return None
+
+    def get_collection_log(self, corp_name=None, source=None):
+        """
+        수집 이력 조회. corp_name / source 둘 다 None이면 전체 조회.
+
+        :return: pd.DataFrame
+        """
+        try:
+            query = "SELECT corp_name, source, last_collected_at FROM COLLECTION_LOG"
+            conds, params = [], []
+            if corp_name:
+                conds.append("corp_name = ?")
+                params.append(corp_name)
+            if source:
+                conds.append("source = ?")
+                params.append(source)
+            if conds:
+                query += " WHERE " + " AND ".join(conds)
+            query += " ORDER BY last_collected_at DESC"
+
+            return pd.read_sql_query(query, self.conn, params=params)
+        except Exception as e:
+            print(f"COLLECTION_LOG 조회 중 오류: {e}")
+            return pd.DataFrame()
+
     def _init_sector_table(self):
         """
         FS.db 내부에 상위 계층 역할을 할 'SECTORS' 마스터 메타데이터 테이블을 생성합니다.
@@ -74,15 +143,39 @@ class FS():
             print(f"섹터 검색 중 에러 발생: {e}")
             return "오류"
 
-    def get_corps_by_sector(self, sector):
+    def get_corps_by_sector(self, sector, sort_by_marketcap=True):
         """
         특정 섹터 이름이 주어지면 해당 섹터에 포함된 모든 회사 리스트를 가져옵니다.
+        sort_by_marketcap이 True일 경우, FS.db 내 각 회사의 최신 marketCap 지표를 조회하여 내림차순(기업가치 높은 순)으로 정렬하여 반환합니다.
         """
         try:
             cursor = self.conn.cursor()
             cursor.execute("SELECT corp_name FROM SECTORS WHERE sector=?", (sector,))
             results = cursor.fetchall()
-            return [row[0] for row in results] if results else []
+            corps = [row[0] for row in results] if results else []
+            
+            if not sort_by_marketcap or not corps:
+                return corps
+                
+            # 각 회사의 개별 테이블에 접근하여 최신 marketCap을 가져와 정렬합니다.
+            corp_marcap = []
+            for corp in corps:
+                marcap = 0.0
+                try:
+                    # 개별 테이블에서 marketCap 조회
+                    cursor.execute(f"SELECT amount FROM '{corp}' WHERE account_nm='marketCap' ORDER BY target_year DESC LIMIT 1")
+                    res = cursor.fetchone()
+                    if res and res[0] is not None:
+                        marcap = float(res[0])
+                except sqlite3.Error:
+                    # 테이블이 없거나 데이터가 없는 경우 0.0으로 처리
+                    pass
+                corp_marcap.append((corp, marcap))
+                
+            # 시가총액(marketCap) 내림차순으로 정렬
+            corp_marcap.sort(key=lambda x: x[1], reverse=True)
+            return [c[0] for c in corp_marcap]
+            
         except sqlite3.Error as e:
             print(f"회사 목록 검색 중 에러 발생: {e}")
             return []
@@ -124,16 +217,31 @@ class FS():
             return False
 
     def search_sql(self, q):
+        """
+        주어진 테이블명(회사·티커)을 조회. 테이블이 없으면 None 반환 (예외 발생 X).
+
+        pandas DatabaseError 는 sqlite3.Error 와 별개 계층이라
+        except 범위를 Exception 으로 확장하고, 추가로 sqlite_master 로 사전 확인한다.
+        """
+        conn = None
         try:
             conn = sqlite3.connect(self.db_name)
+            # 사전 존재 확인 (pandas DatabaseError 발생 자체를 회피)
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (q,),
+            )
+            if cur.fetchone() is None:
+                return None
+
             query = f"SELECT * FROM '{q}'"
-            result_df = pd.read_sql_query(query, conn)
-            return result_df
-        except sqlite3.Error as e:
+            return pd.read_sql_query(query, conn)
+        except Exception as e:
             print(f"SQL 실행 중 에러 발생: {e}")
             return None
         finally:
-            if 'conn' in locals() and conn:
+            if conn:
                 conn.close()
     
     def close(self):
